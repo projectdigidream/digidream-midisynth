@@ -6,7 +6,7 @@ natively and in the browser (WASM), with game-facing music direction
 (seamless loops, crossfades, layer muting, ducking, beat sync) and a web
 authoring tool with live MIDI keyboard input.
 
-Adjacent project to the DoomNetPlatformer engine; not yet wired into the root
+Adjacent project to the Digidream engine; not yet wired into the root
 build. It reuses the engine's fixed-point primitives
 (`core/include/dnp/math/fixed.hpp` — the `asr`/`asl` shift helpers and type
 aliases) and its determinism discipline: every transcendental-derived constant
