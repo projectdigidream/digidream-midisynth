@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>midisynth — track cutter</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #14161a; --panel: #1d2026; --panel2: #23262e; --edge: #32363f;
+    --text: #d6d9e0; --dim: #8a8f9c; --accent: #64b5f6; --good: #7bc67b;
+    --warn: #e0b060; --bad: #e07070; --region: rgba(100,181,246,0.18);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 13px/1.45 -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 8px 14px;
+           background: var(--panel); border-bottom: 1px solid var(--edge);
+           position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 15px; margin: 0; color: var(--accent); font-weight: 600; }
+  header a { color: var(--dim); font-size: 12px; }
+  header .meter { font-family: ui-monospace, monospace; font-size: 12px; color: var(--dim);
+                  margin-left: auto; }
+  header .meter b { color: var(--text); }
+  main { max-width: 1200px; margin: 0 auto; padding: 12px; }
+  section { background: var(--panel); border: 1px solid var(--edge);
+            border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  section h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+               letter-spacing: 0.08em; color: var(--dim); }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--edge);
+           border-radius: 5px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #10131a; font-weight: 600; }
+  button.small { padding: 2px 8px; font-size: 12px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  select, input[type=text], input[type=number] {
+      background: var(--panel2); color: var(--text);
+      border: 1px solid var(--edge); border-radius: 5px; padding: 4px 8px; }
+  input[type=number] { width: 70px; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+  .row label { color: var(--dim); font-size: 12px; }
+  .hint { font-size: 11px; color: var(--dim); }
+  canvas { display: block; width: 100%; border-radius: 6px; background: #101318;
+           border: 1px solid var(--edge); }
+  #timeline { height: 170px; cursor: crosshair; touch-action: none; }
+  #region-label { font-family: ui-monospace, monospace; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--dim); font-weight: normal; font-size: 11px;
+       text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 8px; }
+  td { padding: 5px 8px; border-top: 1px solid var(--edge); }
+  td input[type=text] { width: 150px; }
+  tr.playing td { background: rgba(123,198,123,0.06); }
+  #log { font: 11px/1.5 ui-monospace, monospace; color: var(--dim); max-height: 130px;
+         overflow-y: auto; white-space: pre-wrap; background: #121419;
+         border-radius: 6px; padding: 6px 8px; }
+  #log .warn { color: var(--warn); } #log .err { color: var(--bad); } #log .ok { color: var(--good); }
+  #overlay { position: fixed; inset: 0; background: rgba(10,12,16,0.92); display: flex;
+             align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+             z-index: 10; }
+  #overlay p { color: var(--dim); max-width: 460px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h1>midisynth track cutter</h1>
+  <p>Slice baked <code>.mstk</code> tracks into smaller gameplay-ready pieces:
+     select a bar range on the timeline, hear it loop, test crossfades between
+     pieces, export each slice as its own self-contained track.</p>
+  <button class="primary" id="start-btn">Start audio</button>
+</div>
+
+<header>
+  <h1>track cutter</h1>
+  <a href="./index.html">→ patch editor</a>
+  <span class="meter">bar <b id="m-bar">–</b>·<b id="m-beat">–</b>
+    &nbsp;<b id="t-cur">0:00.0</b>
+    &nbsp;voices <b id="m-voices">0</b></span>
+</header>
+
+<main>
+  <section>
+    <h2>Source track</h2>
+    <div class="row">
+      <input type="file" id="track-file" accept=".mstk">
+      <span id="track-desc" class="hint">bake a .mstk in the patch editor first
+        (load a .mid there and press “Bake .mstk”)</span>
+      <label style="margin-left:auto">volume</label>
+      <input type="range" id="volume" min="0" max="300" value="125">
+    </div>
+  </section>
+
+  <section>
+    <h2>Timeline — drag to select, click a bar to move the playhead</h2>
+    <canvas id="timeline"></canvas>
+    <div class="row">
+      <span id="region-label">no region</span>
+      <label><input type="checkbox" id="chk-snap" checked> snap to bars</label>
+      <span style="flex:1"></span>
+      <button id="btn-preview" class="primary" disabled>▶ Loop region</button>
+      <button id="btn-play-all" disabled>▶ Whole track</button>
+      <button id="btn-stop">⏹</button>
+    </div>
+    <div class="row">
+      <label>crossfade ms</label>
+      <input type="number" id="fade-ms" min="20" max="8000" value="800">
+      <button id="btn-xfade-region" disabled
+              title="cut the region in memory and crossfade the current playback into it looping">
+        ⇄ Crossfade into region</button>
+      <span style="flex:1"></span>
+      <input type="text" id="slice-name" placeholder="slice name" style="width:160px">
+      <button id="btn-add-slice" disabled>＋ Add slice</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Slices — gameplay-ready pieces</h2>
+    <table id="slice-table" style="display:none">
+      <thead><tr><th>name</th><th>range</th><th>length</th><th>size</th><th></th></tr></thead>
+      <tbody id="slice-rows"></tbody>
+    </table>
+    <div class="row" id="slice-empty"><span class="hint">no slices yet — select a region and press “＋ Add slice”</span></div>
+    <div class="row">
+      <button id="btn-export-all" disabled>⬇ Export all slices</button>
+      <span class="hint">each slice is a self-contained .mstk: state-chased at its start,
+        cross-boundary notes closed, loops whole, shares the parent’s instruments
+        (crossfade-compatible family)</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Log</h2>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script type="module" src="cutter.js"></script>
+</body>
+</html>

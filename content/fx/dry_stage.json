@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "reverb": { "roomSize": 0.4, "damping": 0.7, "width": 0.8, "wetGain": 0.12 },
+  "chorus": { "rateHz": 0.9, "depthMs": 2.5, "wetGain": 0.0 }
+}

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>midisynth — patch &amp; kit authoring</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #14161a; --panel: #1d2026; --panel2: #23262e; --edge: #32363f;
+    --text: #d6d9e0; --dim: #8a8f9c; --accent: #64b5f6; --accent2: #4a90d9;
+    --good: #7bc67b; --warn: #e0b060; --bad: #e07070; --wave: #6fd66f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 13px/1.45 -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 8px 14px;
+           background: var(--panel); border-bottom: 1px solid var(--edge);
+           position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 15px; margin: 0; color: var(--accent); font-weight: 600; }
+  header .meter { font-family: ui-monospace, monospace; font-size: 12px; color: var(--dim); }
+  header .meter b { color: var(--text); }
+  #midi-state { margin-left: auto; font-size: 12px; color: var(--dim); }
+  main { display: grid; grid-template-columns: minmax(340px, 5fr) minmax(480px, 7fr);
+         gap: 12px; padding: 12px; max-width: 1500px; margin: 0 auto; }
+  section { background: var(--panel); border: 1px solid var(--edge);
+            border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  section h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+               letter-spacing: 0.08em; color: var(--dim); }
+  fieldset { border: 1px solid var(--edge); border-radius: 6px; margin: 0 0 10px;
+             padding: 8px 10px; }
+  legend { font-size: 11px; color: var(--dim); text-transform: uppercase;
+           letter-spacing: 0.06em; padding: 0 5px; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--edge);
+           border-radius: 5px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #10131a; font-weight: 600; }
+  button.active { background: var(--accent); color: #10131a; }
+  button.small { padding: 2px 8px; font-size: 12px; }
+  select, input[type=text], input[type=number] {
+      background: var(--panel2); color: var(--text);
+      border: 1px solid var(--edge); border-radius: 5px; padding: 4px 8px; }
+  input[type=number] { width: 68px; }
+  input[type=number].narrow { width: 54px; }
+  textarea { width: 100%; min-height: 260px; background: #121419; color: #cfe3c4;
+             border: 1px solid var(--edge); border-radius: 6px; padding: 8px;
+             font: 12px/1.4 ui-monospace, "SF Mono", monospace; resize: vertical; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 5px 0; }
+  .row label { color: var(--dim); font-size: 12px; }
+  .row .val { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text);
+              min-width: 52px; text-align: right; }
+  input[type=range] { accent-color: var(--accent); }
+  #seek { width: 100%; }
+  canvas { display: block; width: 100%; border-radius: 6px; background: #101318;
+           border: 1px solid var(--edge); }
+  #scope { height: 130px; }
+  #env-canvas { height: 150px; cursor: crosshair; touch-action: none; }
+  #wt-preview { height: 90px; }
+  #channels { display: grid; grid-template-columns: repeat(16, 1fr); gap: 4px; margin-top: 8px; }
+  .ch { text-align: center; font-size: 10px; color: var(--dim); cursor: pointer;
+        border: 1px solid var(--edge); border-radius: 4px; padding: 3px 0;
+        user-select: none; }
+  .ch .dot { display: block; height: 4px; border-radius: 2px; margin: 3px 4px 0;
+             background: var(--edge); }
+  .ch.lit .dot { background: var(--good); }
+  .ch.muted { opacity: 0.35; text-decoration: line-through; }
+  #kbd { display: flex; position: relative; height: 96px; margin-top: 8px; user-select: none; }
+  .wk { flex: 1; background: #e8e6e1; border: 1px solid #555;
+        border-radius: 0 0 4px 4px; position: relative; cursor: pointer; }
+  .wk.on { background: var(--accent); }
+  .bk { position: absolute; top: 0; width: 60%; height: 62%; background: #1a1a1e;
+        border: 1px solid #000; border-radius: 0 0 3px 3px; left: 70%; z-index: 2;
+        cursor: pointer; }
+  .bk.on { background: var(--accent); }
+  #kbd.pads { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+              gap: 6px; height: auto; }
+  .pad { border: 1px solid var(--edge); border-radius: 6px; background: var(--panel2);
+         padding: 8px 6px; text-align: center; cursor: pointer; font-size: 11px;
+         color: var(--text); user-select: none; }
+  .pad small { display: block; color: var(--dim); font-size: 10px; margin-top: 2px; }
+  .pad.on { background: var(--accent); color: #10131a; }
+  .pad.on small { color: #10131a; }
+  .pad.sel { border-color: var(--accent); }
+  .pad.lit { border-color: var(--good); box-shadow: 0 0 6px rgba(123,198,123,0.35); }
+  #log { font: 11px/1.5 ui-monospace, monospace; color: var(--dim); max-height: 110px;
+         overflow-y: auto; white-space: pre-wrap; background: #121419;
+         border-radius: 6px; padding: 6px 8px; margin-top: 8px; }
+  #log .warn { color: var(--warn); } #log .err { color: var(--bad); } #log .ok { color: var(--good); }
+  #overlay { position: fixed; inset: 0; background: rgba(10,12,16,0.92); display: flex;
+             align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+             z-index: 10; }
+  #overlay p { color: var(--dim); max-width: 440px; text-align: center; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+  .tabs button { border-radius: 5px 5px 0 0; border-bottom: none; padding: 4px 12px; }
+  .subtabs { display: flex; gap: 4px; margin-bottom: 6px; }
+  .subtabs button { font-size: 12px; padding: 3px 10px; }
+  .modrow { display: grid; grid-template-columns: 1fr 1fr 80px 26px; gap: 6px; margin: 4px 0; }
+  #apply-state { font-size: 11px; margin-left: auto; }
+  #apply-state.ok { color: var(--good); } #apply-state.warn { color: var(--warn); }
+  #apply-state.err { color: var(--bad); }
+  #json-drawer { display: none; margin-top: 8px; }
+  #json-drawer.open { display: block; }
+  .hint { font-size: 11px; color: var(--dim); }
+  .lchip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px;
+           border: 1px solid var(--edge); border-radius: 10px; cursor: pointer;
+           font-size: 11px; color: var(--dim); }
+  .lchip.active { color: var(--text); border-color: var(--accent); }
+  .lchip .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  #render-bar-wrap { height: 6px; background: var(--panel2); border-radius: 3px;
+                     overflow: hidden; margin-top: 6px; display: none; }
+  #render-bar { height: 100%; width: 0; background: var(--accent);
+                transition: width 0.15s linear; }
+  .inst { display: flex; align-items: center; gap: 8px; padding: 3px 6px;
+          border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .inst:hover { background: var(--panel2); }
+  .inst.lit { background: rgba(123,198,123,0.12); }
+  .inst .chs { font-family: ui-monospace, monospace; font-size: 10px;
+               color: var(--dim); min-width: 54px; }
+  .inst .prog { font-family: ui-monospace, monospace; color: var(--accent);
+                min-width: 26px; text-align: right; }
+  .inst .flag { margin-left: auto; font-size: 10px; color: var(--warn); }
+  .inst .now { width: 7px; height: 7px; border-radius: 50%; background: var(--edge); }
+  .inst.lit .now { background: var(--good); }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h1>midisynth authoring tool</h1>
+  <p>Browser audio needs a user gesture to start. Patches and the drum kit
+     load from <code>content/</code>; plug in a MIDI keyboard for live audition.
+     Every edit applies live — only voices on the edited patch restart.</p>
+  <button class="primary" id="start-btn">Start audio</button>
+</div>
+
+<header>
+  <h1>midisynth</h1>
+  <span class="meter">voices <b id="m-voices">0</b>/<span id="m-peak">0</span>
+    &nbsp;steals <b id="m-steals">0</b>
+    &nbsp;drops <b id="m-drops">0</b></span>
+  <span class="meter">bar <b id="m-bar">–</b>·<b id="m-beat">–</b></span>
+  <a href="./cutter.html" style="color:var(--dim);font-size:12px">→ track cutter</a>
+  <span id="midi-state">MIDI: probing…</span>
+</header>
+
+<main>
+  <div id="left-col">
+    <section>
+      <h2>Output</h2>
+      <canvas id="scope"></canvas>
+    </section>
+
+    <section>
+      <h2>Song</h2>
+      <div class="row">
+        <input type="file" id="song-file" accept=".mid,.midi,.mstk">
+        <button class="small" data-song="test/golden/melody.mid">melody</button>
+        <button class="small" data-song="test/golden/drums.mid">drums</button>
+        <button class="small" data-song="test/golden/swan_lake.mid">swan lake</button>
+      </div>
+      <div class="row">
+        <button id="btn-play" class="primary">▶ Play</button>
+        <button id="btn-pause">⏸</button>
+        <button id="btn-stop">⏹</button>
+        <label><input type="checkbox" id="chk-loop"> loop</label>
+        <span class="meter"><b id="t-cur">0:00</b> / <span id="t-dur">0:00</span></span>
+      </div>
+      <input type="range" id="seek" min="0" max="1000" value="0">
+      <div class="row">
+        <label>tempo</label>
+        <input type="range" id="tempo" min="250" max="2000" value="1000" style="flex:1">
+        <span class="val" id="tempo-val">1.00×</span>
+      </div>
+      <div class="row">
+        <label>volume</label>
+        <input type="range" id="volume" min="0" max="300" value="125" style="flex:1">
+        <label><input type="checkbox" id="chk-dither"> dither</label>
+      </div>
+      <div id="channels"></div>
+      <div class="row" style="margin-top:8px; border-top:1px solid var(--edge); padding-top:8px">
+        <button id="btn-render" class="primary">⬇ Render WAV</button>
+        <label>seconds</label>
+        <input type="number" id="render-secs" class="narrow" min="0" max="3600"
+               placeholder="auto" title="empty = song length + 2s tail">
+        <span class="hint" id="render-state">renders the loaded song with your current edits</span>
+      </div>
+      <div id="render-bar-wrap"><div id="render-bar"></div></div>
+    </section>
+
+    <section>
+      <h2>Instruments in this song</h2>
+      <div id="instruments" class="hint">load a song to see its instruments</div>
+    </section>
+
+    <section>
+      <h2>Send effects (song-level)</h2>
+      <div class="row"><label style="width:60px">reverb</label>
+        <label>room</label><input type="range" data-fx="reverb:0" min="0" max="1000" value="800" style="flex:1">
+        <label>damp</label><input type="range" data-fx="reverb:1" min="0" max="1000" value="400" style="flex:1"></div>
+      <div class="row"><label style="width:60px"></label>
+        <label>width</label><input type="range" data-fx="reverb:2" min="0" max="1000" value="1000" style="flex:1">
+        <label>wet</label><input type="range" data-fx="reverb:3" min="0" max="1000" value="300" style="flex:1"></div>
+      <div class="row"><label style="width:60px">chorus</label>
+        <label>rate</label><input type="range" data-fx="chorus:0" min="0" max="5000" value="800" style="flex:1">
+        <label>depth</label><input type="range" data-fx="chorus:1" min="0" max="10000" value="3500" style="flex:1">
+        <label>wet</label><input type="range" data-fx="chorus:2" min="0" max="1000" value="200" style="flex:1"></div>
+    </section>
+
+    <section>
+      <h2>Audition</h2>
+      <div class="row">
+        <label>velocity</label>
+        <input type="range" id="aud-vel" min="1" max="127" value="100" style="flex:1">
+        <label>octave</label>
+        <select id="aud-oct">
+          <option>2</option><option>3</option><option value="4" selected>4</option>
+          <option>5</option><option>6</option>
+        </select>
+        <label><input type="checkbox" id="aud-sus"> sustain</label>
+        <button id="btn-hit" class="small" style="display:none">Hit drum</button>
+      </div>
+      <div class="row">
+        <label>mod</label>
+        <input type="range" id="aud-mod" min="0" max="127" value="0" style="flex:1">
+        <label>bend</label>
+        <input type="range" id="aud-bend" min="-8192" max="8191" value="0" style="flex:1">
+      </div>
+      <div id="kbd"></div>
+      <div class="row"><span class="hint" id="aud-hint">A–K white · W/E/T/Y/U black · Z/X octave · keys audition the edited patch</span></div>
+    </section>
+  </div>
+
+  <div id="right-col">
+    <section>
+      <h2 style="display:flex;align-items:center">Patch editor
+        <span id="apply-state"></span></h2>
+      <div class="row">
+        <select id="edit-mode">
+          <option value="bank">melodic program</option>
+          <option value="kit">drum note</option>
+        </select>
+        <select id="edit-target" style="flex:1"></select>
+      </div>
+      <div class="row">
+        <button id="btn-undo" class="small" title="undo last applied edit (Ctrl+Z)">↶ Undo</button>
+        <button id="btn-ab-store" class="small" title="snapshot the current patch as B">Store B</button>
+        <button id="btn-ab-swap" class="small" title="swap working patch with the B snapshot">A⇄B</button>
+        <button id="btn-init" class="small" title="reset to a plain init patch">Init</button>
+        <span class="hint" id="ab-state"></span>
+      </div>
+      <div class="row">
+        <label>name</label><input type="text" id="p-name" style="flex:1">
+        <span id="drum-flags" style="display:none">
+          <label><input type="checkbox" id="p-oneshot"> oneShot</label>
+          <label>choke</label><input type="number" id="p-choke" class="narrow" min="-1" max="15" value="-1">
+        </span>
+      </div>
+
+      <fieldset>
+        <legend>Layer mix — how the layers combine</legend>
+        <canvas id="layers-canvas" style="height:110px"></canvas>
+        <div class="row" id="layers-legend"></div>
+        <canvas id="layers-env" style="height:74px" title="amp envelopes of all layers"></canvas>
+      </fieldset>
+
+      <div class="tabs" id="layer-tabs"></div>
+
+      <div id="layer-panel">
+        <fieldset>
+          <legend>Oscillator</legend>
+          <div class="row">
+            <select id="l-osc">
+              <option value="wavetable">wavetable</option>
+              <option value="noise">noise</option>
+            </select>
+            <span id="wt-controls">
+              <select id="wt-gen">
+                <option value="additiveHarmonicMorph">additive</option>
+                <option value="pulse">pulse (PWM)</option>
+                <option value="drawbar">drawbar organ</option>
+                <option value="waveshaper">waveshaper</option>
+                <option value="fm2op">FM 2-op</option>
+              </select>
+              <label>frames</label>
+              <input type="number" id="wt-frames" class="narrow" min="1" max="32" value="1">
+            </span>
+            <span id="noise-hint" class="hint" style="display:none">
+              white noise — shape it with the filter below</span>
+          </div>
+          <div class="row" id="gen-params"></div>
+          <canvas id="wt-preview"></canvas>
+          <div class="row" id="wt-morph-row">
+            <label>morph preview</label>
+            <input type="range" id="wt-morph" min="0" max="1000" value="0" style="flex:1">
+            <span class="val" id="wt-morph-val">frame 0</span>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Mix &amp; pitch</legend>
+          <div class="row">
+            <label>gain</label>
+            <input type="range" id="l-gain" min="0" max="1000" value="600" style="flex:1">
+            <span class="val" id="l-gain-val">0.60</span>
+            <label>pan</label>
+            <input type="range" id="l-pan" min="-1000" max="1000" value="0" style="flex:1">
+            <span class="val" id="l-pan-val">C</span>
+          </div>
+          <div class="row">
+            <label>detune ¢</label><input type="number" id="l-detune" step="0.5" value="0">
+            <label>vel curve</label>
+            <select id="l-velcurve">
+              <option value="squared">squared</option>
+              <option value="soft">soft</option>
+              <option value="linear">linear</option>
+            </select>
+            <label>vel</label>
+            <input type="number" id="l-vlow" class="narrow" min="0" max="127" value="0">
+            <label>–</label>
+            <input type="number" id="l-vhigh" class="narrow" min="0" max="127" value="127">
+            <span id="pitchnote-wrap">
+              <label>fixed pitch (note#)</label>
+              <input type="number" id="l-pitchnote" class="narrow" step="0.5" min="-1" max="127" value="-1">
+              <span class="hint">−1 = follow played note</span>
+            </span>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Envelopes <span class="hint">— drag the handles</span></legend>
+          <div class="subtabs" id="env-tabs"></div>
+          <canvas id="env-canvas"></canvas>
+          <div class="row">
+            <label>A</label><input type="number" id="env-a" min="0" max="10000" value="0">
+            <label>D</label><input type="number" id="env-d" min="0" max="10000" value="0">
+            <label>S</label><input type="number" id="env-s" min="0" max="1" step="0.01" value="1">
+            <label>R</label><input type="number" id="env-r" min="0" max="10000" value="0">
+            <span class="hint">ms / ms / level / ms</span>
+          </div>
+          <div class="row">
+            <label>curves</label>
+            <select id="env-ca"><option>linear</option><option>exp</option><option>expAttack</option><option>sCurve</option></select>
+            <select id="env-cd"><option>linear</option><option>exp</option><option>expAttack</option><option>sCurve</option></select>
+            <select id="env-cr"><option>linear</option><option>exp</option><option>expAttack</option><option>sCurve</option></select>
+            <span id="env-depth-wrap">
+              <label id="env-depth-label">depth</label>
+              <input type="number" id="env-depth" step="0.05" value="0">
+            </span>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Filter</legend>
+          <div class="row">
+            <select id="f-mode">
+              <option value="bypass">bypass</option>
+              <option value="lowpass">lowpass</option>
+              <option value="bandpass">bandpass</option>
+              <option value="highpass">highpass</option>
+            </select>
+            <label>cutoff</label>
+            <input type="range" id="f-cut" min="0" max="1000" value="600" style="flex:1">
+            <span class="val" id="f-cut-val">1200 Hz</span>
+          </div>
+          <div class="row">
+            <label>resonance</label>
+            <input type="range" id="f-res" min="0" max="950" value="0" style="flex:1">
+            <span class="val" id="f-res-val">0.00</span>
+            <label>keytrack</label>
+            <input type="range" id="f-key" min="0" max="1000" value="0" style="flex:1">
+            <span class="val" id="f-key-val">0.00</span>
+          </div>
+          <canvas id="filter-resp" style="height:70px"></canvas>
+        </fieldset>
+
+        <fieldset>
+          <legend>LFOs</legend>
+          <div id="lfo-rows"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Mod matrix</legend>
+          <div id="mod-rows"></div>
+          <button id="mod-add" class="small">+ routing</button>
+        </fieldset>
+      </div>
+
+      <div class="row">
+        <button id="btn-export-patch">Export patch</button>
+        <button id="btn-export-doc">Export bank</button>
+        <button id="btn-export-track" class="primary"
+                title="bake the loaded song + your current bank/kit/FX into one self-contained .mstk">
+          Bake .mstk</button>
+        <label style="margin-left:8px">import
+          <input type="file" id="import-file" accept=".json" style="width:180px"></label>
+        <button id="btn-json" style="margin-left:auto">JSON ▾</button>
+      </div>
+      <div id="json-drawer">
+        <textarea id="editor" spellcheck="false"></textarea>
+        <div class="row"><button id="btn-json-apply" class="primary">Apply JSON</button>
+          <span class="hint">two-way: fields ↔ JSON</span></div>
+      </div>
+      <div id="log"></div>
+    </section>
+  </div>
+</main>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
