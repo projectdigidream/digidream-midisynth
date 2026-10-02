@@ -45,7 +45,7 @@ add_library(synth_core STATIC
 # audio path itself carries midisynth's own formats.
 target_include_directories(synth_core PUBLIC
   src
-  ${CMAKE_CURRENT_SOURCE_DIR}/../core/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../engine/core/include
 )
 
 target_compile_options(synth_core PUBLIC

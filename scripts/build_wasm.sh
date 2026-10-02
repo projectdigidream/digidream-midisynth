@@ -29,7 +29,7 @@ mkdir -p "$OUT"
   -Wall -Wextra -Werror \
   -fno-fast-math -ffp-contract=off -fno-strict-aliasing \
   -fno-exceptions -fno-rtti -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 \
-  -I"$ROOT/src" -I"$ROOT/../core/include" \
+  -I"$ROOT/src" -I"$ROOT/../engine/core/include" \
   "$ROOT/src/synth/tables.cpp" \
   "$ROOT/src/synth/wavetables.cpp" \
   "$ROOT/src/synth/wavetable_gen_additive.cpp" \
