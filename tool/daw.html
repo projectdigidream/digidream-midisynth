@@ -62,6 +62,11 @@
                 background: var(--panel2); border: 1px solid var(--edge); border-radius: 6px; padding: 4px;
                 box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
   .menu.open .drop { display: block; }
+  .menu .drop button[disabled] { opacity: 0.4; }
+  .hist { max-height: 180px; overflow-y: auto; }
+  .hist button { font-family: ui-monospace, monospace; font-size: 11px; }
+  .hist button.future { color: var(--dim); font-style: italic; }
+  .hist .empty { padding: 4px 10px; color: var(--dim); font-size: 11px; }
   .drop button { display: block; width: 100%; text-align: left; border: none; background: none;
                  padding: 6px 10px; border-radius: 4px; }
   .drop button:hover { background: var(--panel); }
@@ -311,9 +316,21 @@
       <button data-act="export-master">Export master.json</button>
     </div>
   </div>
+  <div class="menu" id="edit-menu">
+    <button id="edit-btn">Edit</button>
+    <div class="drop">
+      <button data-act="undo" id="mi-undo">Undo</button>
+      <button data-act="redo" id="mi-redo">Redo</button>
+      <hr>
+      <div class="sub">history</div>
+      <div id="hist-list" class="hist"></div>
+    </div>
+  </div>
   <input type="text" id="proj-name" value="untitled" style="width:150px" title="project name">
   <span style="width:8px"></span>
   <button id="hdr-toggle" class="keep" title="show the transport controls">▾</button>
+  <button id="btn-undo" class="keep" title="undo (⌘Z)">↶</button>
+  <button id="btn-redo" class="keep" title="redo (⇧⌘Z)">↷</button>
   <button id="btn-play" class="primary keep" title="space">▶</button>
   <button id="btn-stop" class="keep" title="stop (return to start)">⏹</button>
   <button id="btn-rec" class="rec" title="record onto the armed track (count-in + click)">● Rec</button>

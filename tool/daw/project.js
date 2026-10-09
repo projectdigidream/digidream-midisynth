@@ -281,6 +281,21 @@ export class ProjectStore extends EventTarget {
     this.dispatchEvent(new CustomEvent('change', { detail: { label: 'redo ' + r.label, audio: true, structural: true } }));
     return true;
   }
+  canUndo() { return this.undoStack.length > 0; }
+  canRedo() { return this.redoStack.length > 0; }
+  // What the Edit menu lists: what undo would take back, most recent last,
+  // and what redo would put back, next first.
+  history() {
+    return { past: this.undoStack.map((e) => e.label), future: this.redoStack.map((e) => e.label) };
+  }
+  // Step until the past is `depth` entries deep, in whichever direction that
+  // is -- which is what clicking an entry in that list means.
+  gotoHistory(depth) {
+    let moved = false;
+    while (this.undoStack.length > depth && this.undo()) moved = true;
+    while (this.undoStack.length < depth && this.redo()) moved = true;
+    return moved;
+  }
   replace(project, label = 'load') {
     this.p = normalizeProject(project);
     this.undoStack.length = 0;

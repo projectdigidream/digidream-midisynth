@@ -98,6 +98,68 @@ await sleep(300);
 const notesUndo = await page.evaluate(() => window.__daw.store.p.tracks[0].notes.length);
 check(notesUndo === notesBefore, `undo removes it (${notesUndo})`);
 
+// Undo/redo as controls, not just key chords -- on a phone there is no
+// keyboard, so the buttons are the only way to reach either.
+const notes = () => page.evaluate(() => window.__daw.store.p.tracks[0].notes.length);
+const hist = () => page.evaluate(() => {
+  const h = window.__daw.store.history();
+  return { past: h.past, future: h.future,
+           undoOff: document.getElementById('btn-undo').disabled,
+           redoOff: document.getElementById('btn-redo').disabled };
+});
+let h = await hist();
+check(h.future.length === 1 && !h.redoOff, `undo leaves something to redo (${h.future[0]})`);
+await page.click('#btn-redo');
+await sleep(300);
+check(await notes() === notesBefore + 1, 'the redo button puts the note back');
+await page.click('#btn-undo');
+await sleep(300);
+check(await notes() === notesBefore, 'the undo button takes it away again');
+
+// A fresh edit must drop the redo branch rather than leave it danging.
+await page.evaluate(() => window.__daw.store.mutate('new branch', (p) => {
+  p.tracks[0].notes.push({ tick: 0, dur: 120, note: 48, vel: 80 });
+}));
+await sleep(300);
+h = await hist();
+check(h.future.length === 0 && h.redoOff, 'a new edit drops the redo branch');
+check(h.past[h.past.length - 1] === 'new branch', `history is labelled (${h.past.slice(-2).join(', ')})`);
+
+// Stepping to a point in the history, which is what the Edit menu list does.
+const depth = (await hist()).past.length;
+await page.evaluate(() => window.__daw.store.mutate('step a', (p) => { p.tracks[0].notes.push({ tick: 60, dur: 60, note: 50, vel: 80 }); }));
+await page.evaluate(() => window.__daw.store.mutate('step b', (p) => { p.tracks[0].notes.push({ tick: 120, dur: 60, note: 51, vel: 80 }); }));
+await sleep(300);
+const afterTwo = await notes();
+await page.evaluate((d) => window.__daw.store.gotoHistory(d), depth);
+await sleep(300);
+check(await notes() === afterTwo - 2, `gotoHistory walks back two edits (${afterTwo} -> ${await notes()})`);
+await page.evaluate((d) => window.__daw.store.gotoHistory(d + 2), depth);
+await sleep(300);
+check(await notes() === afterTwo, 'and forward again');
+
+// The Synth tab edits a patch, which keeps its own history; undo and redo
+// must both follow the tab. Redo used to ignore it and hit the project.
+await page.click('[data-tab="synth"]');
+await sleep(600);
+const projNotes = await notes();
+await page.evaluate(() => {
+  const ed = window.__daw.editor;
+  ed.patch.layers[0].mixGain = 0.42;
+  ed.applyNow();
+});
+await sleep(400);
+await page.evaluate(() => window.__daw.undo());
+await sleep(400);
+check(await notes() === projNotes, 'undo on the Synth tab leaves the project alone');
+await page.evaluate(() => window.__daw.redo());
+await sleep(400);
+check(await notes() === projNotes, 'and so does redo');
+const gain = await page.evaluate(() => window.__daw.editor.patch.layers[0].mixGain);
+check(Math.abs(gain - 0.42) < 1e-6, `redo put the patch edit back (mixGain ${gain})`);
+await page.click('[data-tab="track"]');
+await sleep(400);
+
 // Scrolling the roll. Direction is the whole point here: the notes must move
 // WITH the finger on both axes, and the vertical half used to do the
 // opposite, which no state-only pass/fail would have caught.

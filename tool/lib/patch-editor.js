@@ -27,6 +27,7 @@ export const PATCH_EDITOR_HTML = `
   </div>
   <div class="row">
     <button id="btn-undo" class="small" title="undo last applied edit (Ctrl+Z)">↶ Undo</button>
+    <button id="btn-redo" class="small" title="redo (Ctrl+Shift+Z / Ctrl+Y)">↷ Redo</button>
     <button id="btn-ab-store" class="small" title="snapshot the current patch as B">Store B</button>
     <button id="btn-ab-swap" class="small" title="swap working patch with the B snapshot">A⇄B</button>
     <button id="btn-init" class="small" title="reset to a plain init patch">Init</button>
@@ -449,7 +450,11 @@ export function initPatchEditor(root, client, store, opts = {}) {
   const keysDown = new Set();
   let padNotes = [];
   let applyTimer = null;
-  const undoStack = [];
+  // History per edit target. One shared stack used to scan past entries for
+  // other programs and drop them on the way, so undoing on one patch quietly
+  // ate the history of every other.
+  const undoStacks = new Map();
+  const redoStacks = new Map();
   let abSnapshot = null;
   let envDrag = null;
   let active = false;
@@ -534,6 +539,7 @@ export function initPatchEditor(root, client, store, opts = {}) {
     syncUI();
     buildKeyboard();
     if (isKit()) setTimeout(() => hitPad(+key), 60);  // hear what you selected
+    refreshHistoryButtons();   // each target carries its own history
     opts.onSelect?.({ mode: $('edit-mode').value, key, patch });
   }
   $('edit-mode').onchange = () => { refreshTargets(); updateModeUI(); buildKeyboard(); };
@@ -551,12 +557,28 @@ export function initPatchEditor(root, client, store, opts = {}) {
     clearTimeout(applyTimer);
     applyTimer = setTimeout(applyNow, delay);
   }
+  const histKey = () => $('edit-mode').value + '/' + targetKey();
+  const hist = (map) => {
+    const k = histKey();
+    if (!map.has(k)) map.set(k, []);
+    return map.get(k);
+  };
+  function refreshHistoryButtons() {
+    // The editor is embedded in two pages that each own their own markup, so
+    // a button can legitimately be absent -- it must not take the page down.
+    const u = $('btn-undo'), r = $('btn-redo');
+    if (u) u.disabled = hist(undoStacks).length === 0;
+    if (r) r.disabled = hist(redoStacks).length === 0;
+  }
   function pushUndo() {
     const key = targetKey();
     const prev = isKit() ? store.kitDoc.notes[key]
         : key === 'fallback' ? store.bankDoc.fallback : store.bankDoc.programs[key];
-    undoStack.push({ mode: $('edit-mode').value, key, json: JSON.stringify(prev ?? null) });
-    if (undoStack.length > 50) undoStack.shift();
+    const u = hist(undoStacks);
+    u.push(JSON.stringify(prev ?? null));
+    if (u.length > 50) u.shift();
+    hist(redoStacks).length = 0;      // a fresh edit invalidates the redo branch
+    refreshHistoryButtons();
   }
   function onPatchReport(r) {
     setApplyState(r.ok ? (r.warnings.length ? '✓ applied (warnings)' : '✓ applied') : '✗ rejected',
@@ -1625,22 +1647,30 @@ export function initPatchEditor(root, client, store, opts = {}) {
     syncUI();
     applyNow();
   };
-  function doUndo() {
-    while (undoStack.length) {
-      const u = undoStack.pop();
-      if (u.mode !== $('edit-mode').value || u.key !== targetKey()) continue;
-      const prev = JSON.parse(u.json);
-      if (JSON.stringify(prev) === JSON.stringify(patch)) continue;
-      patch = prev ?? defaultPatch();
+  // Undo and redo are the same move in opposite directions: pop the state to
+  // go to off one stack, put the state being left on the other.
+  function step(from, to, note, empty) {
+    const src = hist(from);
+    while (src.length) {
+      const next = JSON.parse(src.pop());
+      if (JSON.stringify(next) === JSON.stringify(patch)) continue;   // no-op entry
+      hist(to).push(JSON.stringify(patch));
+      patch = next ?? defaultPatch();
       layerIdx = 0;
       syncUI();
-      pushToEngine(targetKey(), structuredClone(patch));  // no new undo entry
-      setApplyState('↶ undone', 'ok');
-      return;
+      pushToEngine(targetKey(), structuredClone(patch));  // no new history entry
+      setApplyState(note, 'ok');
+      refreshHistoryButtons();
+      return true;
     }
-    setApplyState('nothing to undo', 'warn');
+    setApplyState(empty, 'warn');
+    refreshHistoryButtons();
+    return false;
   }
-  $('btn-undo').onclick = doUndo;
+  const doUndo = () => step(undoStacks, redoStacks, '↶ undone', 'nothing to undo');
+  const doRedo = () => step(redoStacks, undoStacks, '↷ redone', 'nothing to redo');
+  if ($('btn-undo')) $('btn-undo').onclick = doUndo;
+  if ($('btn-redo')) $('btn-redo').onclick = doRedo;
   $('btn-ab-store').onclick = () => {
     abSnapshot = JSON.stringify(patch);
     $('ab-state').textContent = 'B stored: ' + (patch.name || targetKey());
@@ -1790,7 +1820,12 @@ export function initPatchEditor(root, client, store, opts = {}) {
 
   const onKeyDown = (e) => {
     if (['TEXTAREA', 'INPUT', 'SELECT'].includes(e.target.tagName) || e.repeat) return;
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); doUndo(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) doRedo(); else doUndo();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo(); return; }
     if (e.metaKey || e.ctrlKey) return;
     const k = e.key.toLowerCase();
     if (k === 'z') { $('aud-oct').value = Math.max(2, +$('aud-oct').value - 1); buildKeyboard(); return; }
@@ -1852,6 +1887,10 @@ export function initPatchEditor(root, client, store, opts = {}) {
       updateModeUI();
     },
     applyNow,
+    undo: doUndo,
+    redo: doRedo,
+    canUndo: () => hist(undoStacks).length > 0,
+    canRedo: () => hist(redoStacks).length > 0,
     importDoc,
     noteOn: (note, vel) => { heldNotes.add(note); sendNoteOn(note, vel); },
     noteOff: (note) => { heldNotes.delete(note); sendNoteOff(note); },

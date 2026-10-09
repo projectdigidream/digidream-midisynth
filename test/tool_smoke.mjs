@@ -134,6 +134,38 @@ await new Promise((r) => setTimeout(r, 400));
 genNow = await page.evaluate(() => document.getElementById('wt-gen').value);
 check(genNow === 'pulse', `undo steps back (${genNow})`);
 
+// ... and redo steps forward again, which the editor could not do at all.
+await page.click('#btn-redo');
+await new Promise((r) => setTimeout(r, 400));
+genNow = await page.evaluate(() => document.getElementById('wt-gen').value);
+check(genNow === 'fm2op', `redo steps forward (${genNow})`);
+await page.click('#btn-undo');
+await new Promise((r) => setTimeout(r, 400));
+
+// History is per patch. One shared stack meant undoing here scanned past the
+// other programs' entries and threw them away on the way, so switching back
+// found nothing to undo.
+const selectTarget = async (v) => {
+  await page.evaluate((val) => {
+    document.getElementById('edit-target').value = val;
+    document.getElementById('edit-target').dispatchEvent(new Event('change'));
+  }, v);
+  await new Promise((r) => setTimeout(r, 400));
+};
+const here = await page.evaluate(() => document.getElementById('edit-target').value);
+await selectTarget('48');
+await page.select('#wt-gen', 'saw');
+await new Promise((r) => setTimeout(r, 500));
+await page.click('#btn-undo');                    // spends 48's history
+await new Promise((r) => setTimeout(r, 400));
+await selectTarget(here);
+const undoOff = await page.evaluate(() => document.getElementById('btn-undo').disabled);
+check(!undoOff, 'the other patch still has its own history to undo');
+await page.click('#btn-undo');
+await new Promise((r) => setTimeout(r, 400));
+genNow = await page.evaluate(() => document.getElementById('wt-gen').value);
+check(genNow !== 'pulse', `and undoing there still works (${genNow})`);
+
 // Filter response canvas painted (non-blank for a lowpass layer).
 await page.evaluate(() => {
   document.getElementById('edit-target').value = '48';

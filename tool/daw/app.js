@@ -297,6 +297,7 @@ async function boot(client, setStage = () => {}) {
       if (name === 'fit') fitPanel.activate();
       if (name === 'cues') cues.refresh();
       if (name === 'master') master.syncUI();
+      refreshHistoryUI();     // the Synth tab's history is not the project's
     },
   };
   document.querySelectorAll('#tabs button').forEach((b) => { b.onclick = () => ui.showTab(b.dataset.tab); });
@@ -459,7 +460,66 @@ async function boot(client, setStage = () => {}) {
     roll.refreshTrackList();
     if (currentTab === 'synth') refreshSynthList();
     if (currentTab === 'cues') cues.refresh();
+    refreshHistoryUI();
   });
+
+  // ---------------- undo / redo ----------------
+  // History belongs to whatever the tab is editing. The Synth tab edits a
+  // patch, which keeps its own per-target history; every other tab edits the
+  // project. Undo used to respect that and redo did not, so on the Synth tab
+  // ⌘Z took back a patch edit and ⇧⌘Z put back an unrelated project change.
+  const historyOwner = () => (currentTab === 'synth' ? editor : store);
+  const doUndo = () => { if (historyOwner().undo()) refreshHistoryUI(); };
+  const doRedo = () => { if (historyOwner().redo()) refreshHistoryUI(); };
+
+  function refreshHistoryUI() {
+    const h = historyOwner();
+    const canU = h.canUndo(), canR = h.canRedo();
+    const inSynth = currentTab === 'synth';
+    const past = inSynth ? [] : store.history().past;
+    const future = inSynth ? [] : store.history().future;
+    const last = past[past.length - 1], next = future[future.length - 1];
+    $('btn-undo').disabled = !canU;
+    $('btn-redo').disabled = !canR;
+    $('btn-undo').title = canU ? `undo ${inSynth ? 'patch edit' : last} (⌘Z)` : 'nothing to undo';
+    $('btn-redo').title = canR ? `redo ${inSynth ? 'patch edit' : next} (⇧⌘Z)` : 'nothing to redo';
+    const mu = $('mi-undo'), mr = $('mi-redo');
+    mu.disabled = !canU;
+    mr.disabled = !canR;
+    mu.textContent = canU ? `Undo ${inSynth ? 'patch edit' : last}` : 'Undo';
+    mr.textContent = canR ? `Redo ${inSynth ? 'patch edit' : next}` : 'Redo';
+    // The list runs oldest first; clicking an entry steps to just after it.
+    const list = $('hist-list');
+    list.innerHTML = '';
+    if (inSynth) {
+      list.innerHTML = '<div class="empty">the Synth tab keeps its own history, per patch</div>';
+      return;
+    }
+    if (!past.length && !future.length) {
+      list.innerHTML = '<div class="empty">nothing yet</div>';
+      return;
+    }
+    past.forEach((label, i) => {
+      const b = document.createElement('button');
+      b.textContent = `${i + 1}. ${label}`;
+      b.onclick = () => { store.gotoHistory(i); refreshHistoryUI(); };
+      list.appendChild(b);
+    });
+    const now = document.createElement('button');
+    now.textContent = `${past.length + 1}. ← now`;
+    now.onclick = () => { store.gotoHistory(past.length); refreshHistoryUI(); };
+    list.appendChild(now);
+    // Redo entries are stored next-first; show them in the order they happened.
+    [...future].reverse().forEach((label, i) => {
+      const b = document.createElement('button');
+      b.className = 'future';
+      b.textContent = `${past.length + 2 + i}. ${label}`;
+      b.onclick = () => { store.gotoHistory(past.length + 1 + i); refreshHistoryUI(); };
+      list.appendChild(b);
+    });
+  }
+  $('btn-undo').onclick = doUndo;
+  $('btn-redo').onclick = doRedo;
 
   // ---------------- commands ----------------
   // One table behind the in-page File menu, the desktop app's native menu
@@ -491,8 +551,8 @@ async function boot(client, setStage = () => {}) {
       case 'export-fx': files.exportJson(ctx, 'fx'); break;
       case 'export-master': files.exportJson(ctx, 'master'); break;
       // Native-menu equivalents of the in-page controls.
-      case 'undo': if (currentTab !== 'synth') store.undo(); break;
-      case 'redo': store.redo(); break;
+      case 'undo': doUndo(); break;
+      case 'redo': doRedo(); break;
       case 'play-stop': if (status?.playing) playback.stop(); else playback.play(); break;
       case 'record': recorder.toggle(); break;
       case 'rewind': playback.seekTick(0); break;
@@ -506,17 +566,32 @@ async function boot(client, setStage = () => {}) {
   ctx.runAction = runAction;
 
   // ---------------- File menu ----------------
-  const menu = $('file-menu');
-  $('file-btn').onclick = (e) => { e.stopPropagation(); menu.classList.toggle('open'); };
-  document.addEventListener('click', () => menu.classList.remove('open'));
+  const menu = $('file-menu'), editMenu = $('edit-menu');
+  const closeMenus = () => { menu.classList.remove('open'); editMenu.classList.remove('open'); };
+  $('file-btn').onclick = (e) => { e.stopPropagation(); editMenu.classList.remove('open'); menu.classList.toggle('open'); };
+  $('edit-btn').onclick = (e) => {
+    e.stopPropagation();
+    menu.classList.remove('open');
+    refreshHistoryUI();                       // the list is built when opened
+    editMenu.classList.toggle('open');
+  };
+  document.addEventListener('click', closeMenus);
+  // The history list rebuilds itself on every click, so it must not close the
+  // menu from under the pointer the way a one-shot command does.
+  $('hist-list').addEventListener('click', (e) => e.stopPropagation());
   menu.querySelectorAll('[data-act]').forEach((b) => {
-    b.onclick = () => { menu.classList.remove('open'); runAction(b.dataset.act); };
+    b.onclick = () => { closeMenus(); runAction(b.dataset.act); };
+  });
+  editMenu.querySelectorAll('[data-act]').forEach((b) => {
+    b.onclick = () => { closeMenus(); runAction(b.dataset.act); };
   });
 
   // ---------------- desktop shell ----------------
   if (desktop.isDesktop) {
     // The native File menu owns these actions; a second in-page copy of it
-    // would just be a second place to look.
+    // would just be a second place to look. The Edit menu stays: its two
+    // commands are duplicated natively, but the history list under them is
+    // not something a native menu can show.
     $('file-menu').style.display = 'none';
     desktop.onMenu((act) => runAction(act));
     // Files handed over by the shell: double-clicked in Finder, dropped on
@@ -551,8 +626,11 @@ async function boot(client, setStage = () => {}) {
     if (e.code === 'Space') { e.preventDefault(); if (status?.playing) playback.stop(); else playback.play(); return; }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && currentTab !== 'synth') {
       e.preventDefault();
-      if (e.shiftKey) store.redo(); else store.undo();
-    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); store.redo(); }
+      if (e.shiftKey) doRedo(); else doUndo();
+    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y' && currentTab !== 'synth') {
+      e.preventDefault();
+      doRedo();
+    }
     else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
       runAction(e.shiftKey ? 'save-as' : 'save');
@@ -569,7 +647,9 @@ async function boot(client, setStage = () => {}) {
   await playback.reload({ keepPosition: false });
   arrange.start();
   arrange.refreshTracks();
+  refreshHistoryUI();          // both start out with nothing to take back
   log('DAW ready — draw notes in Track, record with ● Rec, bake in File › Bake .mstk', 'ok');
   // Exposed for the smoke test.
-  window.__daw = { store, client, ctx, playback, ui, pieces, recorder, cues, cutter, master, editor, fitPanel, roll };
+  window.__daw = { store, client, ctx, playback, ui, pieces, recorder, cues, cutter, master, editor,
+                   fitPanel, roll, undo: doUndo, redo: doRedo };
 }
