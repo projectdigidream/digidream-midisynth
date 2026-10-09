@@ -1,0 +1,17 @@
+# DigidreamSynth as a subdomain, coexisting with other services on the same
+# host: Caddy routes by hostname on shared :443 and manages certificates.
+# Append this site to the existing Caddyfile (or drop it in a conf.d import).
+#
+# Public DNS: automatic Let's Encrypt just works.
+# Private/internal domain: use `tls internal` (Caddy's own CA) or a DNS-01
+# wildcard so HTTPS works without the host being publicly reachable --
+# browsers require a secure context for AudioWorklet/Web MIDI.
+synth.example.com {
+    root * /srv/digidreamsynth
+    file_server
+    encode gzip
+    @engine path /tool/dist/*
+    header @engine Cache-Control "public, max-age=86400"
+    header Cache-Control no-cache
+    # tls internal   # <- for a private cluster without public DNS
+}

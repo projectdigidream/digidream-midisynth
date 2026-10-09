@@ -1,0 +1,19 @@
+# systemd unit for the node fallback server (no nginx needed; still put a
+# TLS proxy such as caddy in front for anything beyond localhost).
+#
+#   cp dist-web /srv/digidreamsynth -r
+#   cp deploy/digidreamsynth.service /etc/systemd/system/
+#   systemctl enable --now digidreamsynth
+[Unit]
+Description=DigidreamSynth web tools
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node /srv/digidreamsynth/serve.js 8930 --host 127.0.0.1 --root /srv/digidreamsynth
+Restart=on-failure
+DynamicUser=yes
+ProtectSystem=strict
+ReadOnlyPaths=/srv/digidreamsynth
+
+[Install]
+WantedBy=multi-user.target
