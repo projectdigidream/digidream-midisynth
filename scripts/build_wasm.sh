@@ -62,7 +62,8 @@ mkdir -p "$OUT"
   -sMALLOC=emmalloc \
   -sSTACK_SIZE=1048576 \
   -sASSERTIONS=0 \
-  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP16 \
+  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP16,HEAPF32 \
+  -sEXPORTED_FUNCTIONS=_malloc,_free \
   -o "$OUT/midisynth.mjs"
 
 ls -la "$OUT"

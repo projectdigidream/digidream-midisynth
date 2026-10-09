@@ -13,18 +13,46 @@
 
 #include <cstring>
 
+#include <cstdio>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "../output/fit.h"
 #include "../output/sha256.h"
 #include "../sequencer/music_director.h"
 #include "../synth/patch_loader.h"
 #include "../track/track.h"
+#include "../midi/smf_writer.h"
 #include "../synth/song_config.h"
 
 using namespace msynth;
 
 namespace {
+
+// JSON string literal with escapes (content documents can hold anything).
+std::string json_string(const std::string& s) {
+    std::string out = "\"";
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out += static_cast<char>(c);
+                }
+        }
+    }
+    out += "\"";
+    return out;
+}
 
 std::string report_to_json(bool ok, const std::vector<std::string>& warnings,
                            const std::vector<std::string>& errors) {
@@ -49,6 +77,8 @@ class WebSynth {
   public:
     WebSynth() : director_(engine_) {
         tables_init();
+        director_.set_piece_callback([](void* u) { ++static_cast<WebSynth*>(u)->piece_switches_; },
+                                     this);
         make_builtin_fallback(cache_, bank_.fallback());
         engine_.set_content(&bank_, &kit_);
         render_buf_.resize(BUFFER_FRAMES * 2);
@@ -125,6 +155,7 @@ class WebSynth {
         return reinterpret_cast<uintptr_t>(song_buf_.data());
     }
     std::string load_song_from_buffer() {
+        if (is_track(song_buf_.data(), song_buf_.size())) return load_track_from_buffer();
         SongLoadReport r = director_.load_song(song_buf_.data(), song_buf_.size());
         return report_to_json(r.ok, r.warnings, r.errors);
     }
@@ -155,6 +186,9 @@ class WebSynth {
                 kit_ = std::move(fresh_kit);
                 engine_.set_content(&bank_, &kit_);
                 push_song_config(engine_, data.fx);
+                last_track_bank_ = data.bank_json;
+                last_track_kit_ = data.kit_json;
+                last_track_fx_ = data.fx;
                 std::memcpy(content_hash_, data.meta.content_hash, 32);
                 has_content_hash_ = true;
                 loaded_track_name_ = data.meta.name;
@@ -186,6 +220,104 @@ class WebSynth {
     }
     uintptr_t baked_track_ptr() { return reinterpret_cast<uintptr_t>(baked_.data()); }
     int baked_track_size() { return static_cast<int>(baked_.size()); }
+
+    // Embedded content of the last loaded .mstk (DAW import): bank/kit JSON
+    // text plus the resolved fx + master as a song-config document.
+    std::string track_content_json() {
+        auto q = [](i32 v) { return master_to_json_number(v); };
+        std::string fx = "{\"version\":1,\"reverb\":{\"roomSize\":" + q(last_track_fx_.reverb.room_size) +
+                         ",\"damping\":" + q(last_track_fx_.reverb.damping) +
+                         ",\"width\":" + q(last_track_fx_.reverb.width) +
+                         ",\"wetGain\":" + q(last_track_fx_.reverb.wet_gain) +
+                         "},\"chorus\":{\"rateHz\":" + q(last_track_fx_.chorus.rate_hz_q16) +
+                         ",\"depthMs\":" + q(last_track_fx_.chorus.depth_ms_q16) +
+                         ",\"wetGain\":" + q(last_track_fx_.chorus.wet_gain) +
+                         "},\"master\":" + master_to_json(last_track_fx_.master, false) + "}";
+        return "{\"name\":" + json_string(loaded_track_name_) + ",\"bankJson\":" + json_string(last_track_bank_) +
+               ",\"kitJson\":" + json_string(last_track_kit_) + ",\"fx\":" + fx + "}";
+    }
+
+    // ---- Mastering ----
+    void master_param(int id, int v) {
+        if (id < 0 || id >= static_cast<int>(MasterParamId::COUNT)) return;
+        EngineCommand c;
+        c.type = EngineCommand::Type::MasterParam;
+        c.d1 = static_cast<u8>(id);
+        c.v = v;
+        engine_.queue().push(c);
+    }
+    std::string load_master_config(const std::string& json) {
+        MasterParams p;
+        LoadResult r = ::load_master_config(json.data(), json.size(), p);
+        if (r.ok) push_master_config(engine_, p);
+        return report_to_json(r.ok, r.warnings, r.errors);
+    }
+    // Current chain parameters as master.json text (export).
+    std::string master_json() { return master_to_json(engine_.master().params(), true); }
+    // Level meters since the last call, as JSON. msL/msR are mean squares in
+    // units of 2^32 per 1.0^2 (JS: rms = sqrt(ms / 2^32)).
+    std::string take_meters_json() {
+        const MasterMeters m = engine_.take_master_meters();
+        const u64 ms_l = m.samples ? m.sumsq_l / m.samples : 0;
+        const u64 ms_r = m.samples ? m.sumsq_r / m.samples : 0;
+        std::string s = "{\"peakL\":" + std::to_string(m.peak_l) +
+                        ",\"peakR\":" + std::to_string(m.peak_r) +
+                        ",\"msL\":" + std::to_string(ms_l) + ",\"msR\":" + std::to_string(ms_r) +
+                        ",\"samples\":" + std::to_string(m.samples) +
+                        ",\"compGr\":" + std::to_string(m.comp_gr) +
+                        ",\"limGain\":" + std::to_string(m.lim_gain) +
+                        ",\"clips\":" + std::to_string(m.clips) +
+                        ",\"enabled\":" + (engine_.master().enabled() ? "true" : "false") +
+                        ",\"latency\":" + std::to_string(engine_.master().latency_samples()) + "}";
+        return s;
+    }
+
+    // ---- DAW support ----
+    // Parse song_buf_ (.mid or .mstk -> song only) into a ParsedSong.
+    bool parse_song_buffer(ParsedSong& out, LoadResult& r) {
+        if (is_track(song_buf_.data(), song_buf_.size())) {
+            TrackData td;
+            LoadResult lr = ::load_track(song_buf_.data(), song_buf_.size(), td);
+            r.warnings = lr.warnings;
+            if (!lr.ok) { r.errors = lr.errors; r.ok = false; return false; }
+            if (has_content_hash_ && std::memcmp(content_hash_, td.meta.content_hash, 32) != 0)
+                r.warn("track was baked with different content; playing with loaded instruments");
+            out = std::move(td.song);
+            return true;
+        }
+        ParseResult pr = smf_parse(song_buf_.data(), song_buf_.size(), out);
+        r.warnings = pr.warnings;
+        if (!pr.ok) { r.errors = pr.errors; r.ok = false; return false; }
+        return true;
+    }
+    // Live edit: swap the song keeping position (voice/controller diff repair).
+    std::string replace_song_from_buffer() {
+        ParsedSong parsed;
+        LoadResult r;
+        if (!parse_song_buffer(parsed, r)) return report_to_json(false, r.warnings, r.errors);
+        director_.replace_song(std::move(parsed));
+        return report_to_json(true, r.warnings, r.errors);
+    }
+    // Cue transition: mode 0 = at loop end, 1 = at next bar, 2 = immediate.
+    std::string queue_track_from_buffer(int mode, int fade_ms) {
+        ParsedSong parsed;
+        LoadResult r;
+        if (!parse_song_buffer(parsed, r)) return report_to_json(false, r.warnings, r.errors);
+        const auto m = mode == 1 ? MusicDirector::TransitionMode::AtNextBar
+                     : mode == 2 ? MusicDirector::TransitionMode::Immediate
+                                 : MusicDirector::TransitionMode::AtLoopEnd;
+        director_.transition(std::move(parsed), m, static_cast<u32>(fade_ms < 0 ? 0 : fade_ms));
+        return report_to_json(true, r.warnings, r.errors);
+    }
+    void cancel_queued() { director_.cancel_transition(); }
+    bool queued() { return director_.transition_queued(); }
+    int ms_to_boundary() { return static_cast<int>(director_.ms_to_boundary()); }
+    int piece_switches() { return piece_switches_; }
+    // Export the active song as SMF into baked_ (reuse the pointer/size getters).
+    std::string export_smf() {
+        LoadResult r = smf_write(director_.active().song().parsed, baked_);
+        return report_to_json(r.ok, r.warnings, r.errors);
+    }
 
     // ---- Cutter support ----
     // Timeline info for the ACTIVE song (works for .mid and .mstk loads):
@@ -250,6 +382,10 @@ class WebSynth {
     }
 
     std::string crossfade_from_buffer(int fade_ms) {
+        // .mstk accepted wherever .mid is; the track path also adds the
+        // content-hash mismatch warning.
+        if (is_track(song_buf_.data(), song_buf_.size()))
+            return crossfade_track_from_buffer(fade_ms);
         SongLoadReport r = director_.crossfade_to(song_buf_.data(), song_buf_.size(),
                                                   static_cast<u32>(fade_ms));
         return report_to_json(r.ok, r.warnings, r.errors);
@@ -397,10 +533,135 @@ class WebSynth {
     bool has_content_hash_ = false;
     u8 content_hash_[32] = {};
     std::string loaded_track_name_ = "song";
+    std::string last_track_bank_, last_track_kit_;
+    SongFxConfig last_track_fx_;
+    int piece_switches_ = 0;
     std::vector<i16> render_buf_;
 };
 
 }  // namespace
+
+
+// ---------------------------------------------------------------------------
+// Patch fitting for the DAW's Fit panel. Same optimiser and loss as
+// midisynth_fit, so a fit done in the browser equals a fit done on the CLI.
+// One restart per call: the caller drives the loop so it can show progress
+// and stay responsive.
+// ---------------------------------------------------------------------------
+class PatchFitter {
+  public:
+    PatchFitter() = default;
+
+    // JS writes float samples (48 kHz mono) into the heap and passes the ptr.
+    void setTarget(uintptr_t ptr, int len) {
+        const float* p = reinterpret_cast<const float*>(ptr);
+        target_.assign(p, p + std::max(0, len));
+        raw_ = target_;
+    }
+
+    std::string archList() const {
+        std::string s = "[";
+        bool first = true;
+        for (const auto& a : msynth::fit::architectures()) {
+            if (!first) s += ",";
+            first = false;
+            s += "{\"name\":\"" + std::string(a.name) + "\",\"seconds\":" +
+                 std::to_string(a.seconds) + ",\"params\":[";
+            for (size_t i = 0; i < a.params.size(); ++i) {
+                const auto& pm = a.params[i];
+                if (i) s += ",";
+                s += "{\"name\":\"" + std::string(pm.name) + "\",\"lo\":" +
+                     std::to_string(pm.lo) + ",\"hi\":" + std::to_string(pm.hi) +
+                     ",\"log\":" + (pm.log ? "true" : "false") + "}";
+            }
+            s += "]}";
+        }
+        return s + "]";
+    }
+
+    // window_ms 0 = the architecture's own length. A recording's room tail is
+    // not something the synth can reproduce, so fitting it wastes the budget.
+    bool configure(std::string arch, float stft, float env, float bands, float window_ms) {
+        const auto all = msynth::fit::architectures();
+        arch_ = -1;
+        for (size_t i = 0; i < all.size(); ++i)
+            if (arch == all[i].name) arch_ = static_cast<int>(i);
+        if (arch_ < 0) return false;
+        archs_ = all;
+        w_.stft = stft;
+        w_.env = env;
+        w_.bands = bands;
+        const float secs = window_ms > 0 ? window_ms / 1000.0f : archs_[arch_].seconds;
+        frames_ = static_cast<size_t>(secs * SAMPLE_RATE);
+        target_ = raw_;
+        msynth::fit::prepare(target_, frames_);
+        rend_ = std::make_unique<msynth::fit::Renderer>(secs);
+        return true;
+    }
+
+    // One restart. Returns JSON with the patch and the loss broken out per
+    // term, so the panel can show which part of the objective is unhappy.
+    std::string fitOnce(int iters, int seed) {
+        if (arch_ < 0 || !rend_) return "{\"error\":\"no architecture\"}";
+        float loss = 0;
+        const auto u = msynth::fit::fit_once(archs_[arch_], target_, *rend_, iters,
+                                             static_cast<unsigned>(seed), loss, w_);
+        const std::string js = msynth::fit::build_json(archs_[arch_], u);
+        std::vector<float> got;
+        rend_->render(js, got);
+        const auto parts = msynth::fit::loss_parts(target_, got, w_);
+        std::string s = "{\"loss\":" + std::to_string(parts.total) +
+                        ",\"stft\":" + std::to_string(parts.stft) +
+                        ",\"env\":" + std::to_string(parts.env) +
+                        ",\"bands\":" + std::to_string(parts.bands) + ",\"params\":{";
+        for (size_t i = 0; i < u.size(); ++i) {
+            if (i) s += ",";
+            s += "\"" + std::string(archs_[arch_].params[i].name) + "\":" +
+                 std::to_string(msynth::fit::denorm(archs_[arch_].params[i], u[i]));
+        }
+        return s + "},\"patch\":" + js + "}";
+    }
+
+    // Band profiles of target and candidate, for the preview plot.
+    std::string analyze(std::string patch_json) {
+        std::vector<float> got;
+        if (arch_ < 0 || !rend_ || !rend_->render(patch_json, got)) return "{\"error\":\"render failed\"}";
+        const auto parts = msynth::fit::loss_parts(target_, got, w_);
+        const auto ta = msynth::fit::band_profile(target_), ca = msynth::fit::band_profile(got);
+        auto arr = [](const std::vector<float>& v) {
+            std::string s = "[";
+            for (size_t i = 0; i < v.size(); ++i) { if (i) s += ","; s += std::to_string(v[i]); }
+            return s + "]";
+        };
+        return "{\"loss\":" + std::to_string(parts.total) + ",\"stft\":" +
+               std::to_string(parts.stft) + ",\"env\":" + std::to_string(parts.env) +
+               ",\"bands\":" + std::to_string(parts.bands) + ",\"target\":" + arr(ta) +
+               ",\"candidate\":" + arr(ca) + "}";
+    }
+
+    // Render a candidate into the heap for audition / waveform preview.
+    int renderTo(std::string patch_json, uintptr_t ptr, int max_len) {
+        std::vector<float> got;
+        if (!rend_ || !rend_->render(patch_json, got)) return 0;
+        const int n = std::min<int>(max_len, static_cast<int>(got.size()));
+        std::copy(got.begin(), got.begin() + n, reinterpret_cast<float*>(ptr));
+        return n;
+    }
+    int targetTo(uintptr_t ptr, int max_len) {
+        const int n = std::min<int>(max_len, static_cast<int>(target_.size()));
+        std::copy(target_.begin(), target_.begin() + n, reinterpret_cast<float*>(ptr));
+        return n;
+    }
+    int frames() const { return static_cast<int>(frames_); }
+
+  private:
+    std::vector<msynth::fit::Arch> archs_;
+    int arch_ = -1;
+    std::vector<float> raw_, target_;
+    msynth::fit::LossWeights w_;
+    std::unique_ptr<msynth::fit::Renderer> rend_;
+    size_t frames_ = 0;
+};
 
 EMSCRIPTEN_BINDINGS(midisynth) {
     emscripten::class_<WebSynth>("WebSynth")
@@ -418,6 +679,18 @@ EMSCRIPTEN_BINDINGS(midisynth) {
         .function("bakedTrackPtr", &WebSynth::baked_track_ptr)
         .function("bakedTrackSize", &WebSynth::baked_track_size)
         .function("trackInfoJson", &WebSynth::track_info_json)
+        .function("trackContentJson", &WebSynth::track_content_json)
+        .function("masterParam", &WebSynth::master_param)
+        .function("loadMasterConfig", &WebSynth::load_master_config)
+        .function("masterJson", &WebSynth::master_json)
+        .function("takeMetersJson", &WebSynth::take_meters_json)
+        .function("replaceSongFromBuffer", &WebSynth::replace_song_from_buffer)
+        .function("queueTrackFromBuffer", &WebSynth::queue_track_from_buffer)
+        .function("cancelQueued", &WebSynth::cancel_queued)
+        .function("queued", &WebSynth::queued)
+        .function("msToBoundary", &WebSynth::ms_to_boundary)
+        .function("pieceSwitches", &WebSynth::piece_switches)
+        .function("exportSmf", &WebSynth::export_smf)
         .function("cutTrackFromBuffer", &WebSynth::cut_track_from_buffer)
         .function("crossfadeTrackFromBuffer", &WebSynth::crossfade_track_from_buffer)
         .function("play", &WebSynth::play)
@@ -453,4 +726,15 @@ EMSCRIPTEN_BINDINGS(midisynth) {
         .function("channelNotes", &WebSynth::channel_notes)
         .function("channelProgram", &WebSynth::channel_program)
         .function("activeNoteList", &WebSynth::active_note_list);
+
+    emscripten::class_<PatchFitter>("PatchFitter")
+        .constructor<>()
+        .function("setTarget", &PatchFitter::setTarget)
+        .function("archList", &PatchFitter::archList)
+        .function("configure", &PatchFitter::configure)
+        .function("fitOnce", &PatchFitter::fitOnce)
+        .function("analyze", &PatchFitter::analyze)
+        .function("renderTo", &PatchFitter::renderTo)
+        .function("targetTo", &PatchFitter::targetTo)
+        .function("frames", &PatchFitter::frames);
 }

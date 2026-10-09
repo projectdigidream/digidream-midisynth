@@ -67,6 +67,10 @@ if(NOT EMSCRIPTEN)
   add_executable(midisynth_bake src/output/bake_cli.cpp)
   target_link_libraries(midisynth_bake synth_core)
 
+  # Fits a patch to a recorded sample (finite-difference gradient descent).
+  add_executable(midisynth_fit src/output/fit_cli.cpp)
+  target_link_libraries(midisynth_fit synth_core)
+
   # Native realtime playback (miniaudio). The miniaudio TU is third-party
   # code and is exempt from -Werror.
   add_executable(midisynth_play
