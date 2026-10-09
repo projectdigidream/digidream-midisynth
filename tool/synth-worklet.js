@@ -29,6 +29,7 @@ class MidiSynthProcessor extends AudioWorkletProcessor {
 
   handle(m) {
     const s = this.synth;
+    this.rid = m.requestId;  // echoed on every reply this message produces
     switch (m.type) {
       case 'loadBank':
         this.report('bank', s.loadBank(m.json));
@@ -60,21 +61,61 @@ class MidiSynthProcessor extends AudioWorkletProcessor {
         break;
       }
       case 'trackInfo':
-        this.port.postMessage({ type: 'trackInfo', info: JSON.parse(s.trackInfoJson()) });
+        this.port.postMessage({ type: 'trackInfo', info: JSON.parse(s.trackInfoJson()),
+                                requestId: this.rid });
         break;
+      case 'trackContent':
+        this.port.postMessage({ type: 'trackContent', content: JSON.parse(s.trackContentJson()),
+                                requestId: this.rid });
+        break;
+      // ---- DAW: live edit, cue scheduling, SMF export ----
+      case 'replaceSong': {  // .mid or .mstk; keeps the musical position
+        const bytes = new Uint8Array(m.bytes);
+        const ptr = s.songBufferPrepare(bytes.length);
+        this.mod.HEAPU8.set(bytes, ptr);
+        this.report('replace', s.replaceSongFromBuffer());
+        break;
+      }
+      case 'queueTrack': {  // mode: 'loopEnd' | 'nextBar' | 'now'
+        const bytes = new Uint8Array(m.bytes);
+        const ptr = s.songBufferPrepare(bytes.length);
+        this.mod.HEAPU8.set(bytes, ptr);
+        const mode = m.mode === 'nextBar' ? 1 : m.mode === 'now' ? 2 : 0;
+        this.report('queue', s.queueTrackFromBuffer(mode, m.fadeMs | 0));
+        break;
+      }
+      case 'cancelQueued': s.cancelQueued(); break;
+      // ---- mastering ----
+      case 'masterParam': s.masterParam(m.id | 0, m.q16 | 0); break;
+      case 'loadMaster': this.report('master', s.loadMasterConfig(m.json)); break;
+      case 'masterJson':
+        this.port.postMessage({ type: 'masterJson', json: s.masterJson(), requestId: this.rid });
+        break;
+      case 'exportSmf': {
+        const rep = JSON.parse(s.exportSmf());
+        this.port.postMessage({ type: 'report', what: 'exportSmf', report: rep, requestId: this.rid });
+        if (rep.ok) {
+          const size = s.bakedTrackSize();
+          const out = new Uint8Array(size);
+          out.set(new Uint8Array(this.mod.HEAPU8.buffer, s.bakedTrackPtr(), size));
+          this.port.postMessage({ type: 'smf', bytes: out.buffer, name: m.name,
+                                  requestId: this.rid }, [out.buffer]);
+        }
+        break;
+      }
       case 'cutTrack': {
         const bytes = new Uint8Array(m.bytes);
         const ptr = s.songBufferPrepare(bytes.length);
         this.mod.HEAPU8.set(bytes, ptr);
         const rep = JSON.parse(s.cutTrackFromBuffer(m.startTick | 0, m.endTick | 0,
                                                     m.name || 'slice'));
-        this.port.postMessage({ type: 'report', what: 'cut', report: rep });
+        this.port.postMessage({ type: 'report', what: 'cut', report: rep, requestId: this.rid });
         if (rep.ok) {
           const size = s.bakedTrackSize();
           const out = new Uint8Array(size);
           out.set(new Uint8Array(this.mod.HEAPU8.buffer, s.bakedTrackPtr(), size));
           this.port.postMessage({ type: 'cutBaked', bytes: out.buffer, name: m.name,
-                                  requestId: m.requestId }, [out.buffer]);
+                                  requestId: this.rid }, [out.buffer]);
         }
         break;
       }
@@ -91,13 +132,13 @@ class MidiSynthProcessor extends AudioWorkletProcessor {
         this.mod.HEAPU8.set(bytes, ptr);
         const rep = JSON.parse(s.bakeTrackFromBuffer(
             m.bankJson, m.kitJson, m.fxJson || '', m.name || 'track', m.verifySeconds | 0));
-        this.port.postMessage({ type: 'report', what: 'bake', report: rep });
+        this.port.postMessage({ type: 'report', what: 'bake', report: rep, requestId: this.rid });
         if (rep.ok) {
           const size = s.bakedTrackSize();
           const out = new Uint8Array(size);
           out.set(new Uint8Array(this.mod.HEAPU8.buffer, s.bakedTrackPtr(), size));
-          this.port.postMessage({ type: 'bakedTrack', bytes: out.buffer, name: m.name },
-                                [out.buffer]);
+          this.port.postMessage({ type: 'bakedTrack', bytes: out.buffer, name: m.name,
+                                  requestId: this.rid }, [out.buffer]);
         }
         break;
       }
@@ -132,7 +173,8 @@ class MidiSynthProcessor extends AudioWorkletProcessor {
   }
 
   report(what, jsonText) {
-    this.port.postMessage({ type: 'report', what, report: JSON.parse(jsonText) });
+    this.port.postMessage({ type: 'report', what, report: JSON.parse(jsonText),
+                            requestId: this.rid });
   }
 
   process(inputs, outputs) {
@@ -156,10 +198,11 @@ class MidiSynthProcessor extends AudioWorkletProcessor {
     if (this.sinceStatus >= 4800) {  // ~10 Hz status feed
       this.sinceStatus = 0;
       const s = this.synth;
-      const channelNotes = [], channelPrograms = [];
+      const channelNotes = [], channelPrograms = [], activeNotes = [];
       for (let ch = 0; ch < 16; ch++) {
         channelNotes.push(s.channelNotes(ch));
         channelPrograms.push(s.channelProgram(ch));
+        activeNotes.push(s.activeNoteList(ch));
       }
       this.port.postMessage({
         type: 'status',
@@ -175,7 +218,12 @@ class MidiSynthProcessor extends AudioWorkletProcessor {
         queueDepth: s.queueDepth(),
         channelNotes,
         channelPrograms,
-        drumNotes: s.activeNoteList(9),
+        drumNotes: activeNotes[9],
+        activeNotes,                      // per channel: sounding note numbers
+        queued: s.queued(),               // a cue change is pending
+        msToBoundary: s.msToBoundary(),   // countdown to loop end / queued point
+        pieceSwitches: s.pieceSwitches(), // increments when a queued piece takes over
+        meters: JSON.parse(s.takeMetersJson()),  // master meters since last status
       });
     }
     return true;

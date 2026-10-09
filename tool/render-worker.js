@@ -22,7 +22,7 @@ function wavHeader(dataBytes) {
 }
 
 onmessage = async (e) => {
-  const { bankJson, kitJson, songBytes, seconds, dither, loop } = e.data;
+  const { bankJson, kitJson, songBytes, seconds, dither, loop, fxJson, masterJson } = e.data;
   try {
     const mod = await createMidiSynth();
     const s = new mod.WebSynth();
@@ -34,11 +34,17 @@ onmessage = async (e) => {
       if (!r.ok) throw new Error(`${what}: ${r.errors.join('; ')}`);
     }
     const bytes = new Uint8Array(songBytes);
+    const isTrack = bytes.length >= 4 && bytes[0] === 0x4D && bytes[1] === 0x53 &&
+                    bytes[2] === 0x54 && bytes[3] === 0x4B;
     const ptr = s.songBufferPrepare(bytes.length);
     mod.HEAPU8.set(bytes, ptr);
-    const sr = JSON.parse(s.loadSongFromBuffer());
-    reports.push(['song', sr]);
+    // A .mstk brings its own content + fx + mastering; a .mid takes the
+    // tool's current fx/master (song-level config, then the master preset).
+    const sr = JSON.parse(isTrack ? s.loadTrackFromBuffer() : s.loadSongFromBuffer());
+    reports.push([isTrack ? 'track' : 'song', sr]);
     if (!sr.ok) throw new Error('song: ' + sr.errors.join('; '));
+    if (fxJson && !isTrack) reports.push(['fx', JSON.parse(s.loadSongConfig(fxJson))]);
+    if (masterJson) reports.push(['master', JSON.parse(s.loadMasterConfig(masterJson))]);
     postMessage({ type: 'reports', reports });
 
     s.setDither(!!dither);

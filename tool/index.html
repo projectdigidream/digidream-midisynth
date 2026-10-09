@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>midisynth — patch &amp; kit authoring</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DigidreamSynth — patch &amp; kit authoring</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>
   :root {
     --bg: #14161a; --panel: #1d2026; --panel2: #23262e; --edge: #32363f;
@@ -124,7 +124,7 @@
 </head>
 <body>
 <div id="overlay">
-  <h1>midisynth authoring tool</h1>
+  <h1>DigidreamSynth authoring tool</h1>
   <p>Browser audio needs a user gesture to start. Patches and the drum kit
      load from <code>content/</code>; plug in a MIDI keyboard for live audition.
      Every edit applies live — only voices on the edited patch restart.</p>
@@ -132,12 +132,13 @@
 </div>
 
 <header>
-  <h1>midisynth</h1>
+  <h1>DigidreamSynth</h1>
   <span class="meter">voices <b id="m-voices">0</b>/<span id="m-peak">0</span>
     &nbsp;steals <b id="m-steals">0</b>
     &nbsp;drops <b id="m-drops">0</b></span>
   <span class="meter">bar <b id="m-bar">–</b>·<b id="m-beat">–</b></span>
   <a href="./cutter.html" style="color:var(--dim);font-size:12px">→ track cutter</a>
+  <a href="./daw.html" style="color:var(--dim);font-size:12px">→ DAW</a>
   <span id="midi-state">MIDI: probing…</span>
 </header>
 
@@ -270,13 +271,24 @@
             <select id="l-osc">
               <option value="wavetable">wavetable</option>
               <option value="noise">noise</option>
+              <option value="metal">metal</option>
             </select>
             <span id="wt-controls">
+              <label>classic</label>
+              <select id="wt-classic" title="subtractive starting points: sets the generator + parameters">
+                <option value="">—</option><option value="sine">sine</option><option value="triangle">triangle</option>
+                <option value="saw">saw</option><option value="square">square</option>
+                <option value="pulse25">pulse 25%</option><option value="pulse12">pulse 12%</option>
+              </select>
               <select id="wt-gen">
+                <option value="custom">custom (draw)</option>
                 <option value="additiveHarmonicMorph">additive</option>
                 <option value="pulse">pulse (PWM)</option>
                 <option value="drawbar">drawbar organ</option>
                 <option value="waveshaper">waveshaper</option>
+                <option value="chebyshev">chebyshev</option>
+                <option value="harmonics">harmonics</option>
+                <option value="hardsync">hard sync</option>
                 <option value="fm2op">FM 2-op</option>
               </select>
               <label>frames</label>
@@ -306,6 +318,8 @@
           </div>
           <div class="row">
             <label>detune ¢</label><input type="number" id="l-detune" step="0.5" value="0">
+            <label>delay ms</label><input type="number" id="l-delay" class="narrow" min="0" max="2000" step="1" value="0"
+                   title="the layer speaks this much later — flams, claps, stacked strikes">
             <label>vel curve</label>
             <select id="l-velcurve">
               <option value="squared">squared</option>
@@ -322,6 +336,21 @@
               <span class="hint">−1 = follow played note</span>
             </span>
           </div>
+          <div class="row">
+            <label>unison</label><input type="number" id="l-unison" class="narrow" min="1" max="7" step="1" value="1">
+            <label>detune ¢</label><input type="number" id="l-unidet" class="narrow" min="0" max="100" step="0.5" value="7">
+            <label>spread</label><input type="number" id="l-unispread" class="narrow" min="0" max="1" step="0.05" value="0.5">
+            <label>ring ×</label><input type="number" id="l-ringratio" class="narrow" min="0" max="16" step="0.05" value="0">
+            <label>amt</label><input type="number" id="l-ringamt" class="narrow" min="0" max="1" step="0.05" value="1">
+            <label>rel-vel</label><input type="number" id="l-relvel" class="narrow" min="0" max="1" step="0.05" value="0">
+            <label>RR</label><input type="number" id="l-rr" class="narrow" min="0" max="15" step="1" value="0">
+          </div>
+          <div class="row">
+            <label>sends (blank = channel CC)</label>
+            <label>rev</label><input type="number" id="l-sendrev" class="narrow" min="0" max="1" step="0.05" placeholder="ch">
+            <label>cho</label><input type="number" id="l-sendcho" class="narrow" min="0" max="1" step="0.05" placeholder="ch">
+            <label>dly</label><input type="number" id="l-senddel" class="narrow" min="0" max="1" step="0.05" placeholder="ch">
+          </div>
         </fieldset>
 
         <fieldset>
@@ -329,11 +358,14 @@
           <div class="subtabs" id="env-tabs"></div>
           <canvas id="env-canvas"></canvas>
           <div class="row">
+            <label>dly</label><input type="number" id="env-dl" class="narrow" min="0" max="10000" value="0">
             <label>A</label><input type="number" id="env-a" min="0" max="10000" value="0">
+            <label>H</label><input type="number" id="env-h" class="narrow" min="0" max="10000" value="0">
             <label>D</label><input type="number" id="env-d" min="0" max="10000" value="0">
             <label>S</label><input type="number" id="env-s" min="0" max="1" step="0.01" value="1">
             <label>R</label><input type="number" id="env-r" min="0" max="10000" value="0">
-            <span class="hint">ms / ms / level / ms</span>
+            <label><input type="checkbox" id="env-loop"> loop</label>
+            <span class="hint">ms (DAHDSR)</span>
           </div>
           <div class="row">
             <label>curves</label>
@@ -355,7 +387,16 @@
               <option value="lowpass">lowpass</option>
               <option value="bandpass">bandpass</option>
               <option value="highpass">highpass</option>
+              <option value="notch">notch</option>
+              <option value="comb">comb</option>
+              <option value="formant">formant</option>
             </select>
+            <span id="vowel-wrap" style="display:none">
+              <label>vowel</label>
+              <select id="f-vowel"><option>a</option><option>e</option><option>i</option><option>o</option><option>u</option></select>
+              <label>→</label>
+              <select id="f-vowel2"><option value="">—</option><option>a</option><option>e</option><option>i</option><option>o</option><option>u</option></select>
+            </span>
             <label>cutoff</label>
             <input type="range" id="f-cut" min="0" max="1000" value="600" style="flex:1">
             <span class="val" id="f-cut-val">1200 Hz</span>
@@ -367,6 +408,22 @@
             <label>keytrack</label>
             <input type="range" id="f-key" min="0" max="1000" value="0" style="flex:1">
             <span class="val" id="f-key-val">0.00</span>
+          </div>
+          <div class="row">
+            <label>slope</label>
+            <select id="f-slope"><option value="12">12 dB</option><option value="24">24 dB</option></select>
+            <label>drive</label><input type="range" id="f-drive" min="1000" max="8000" value="1000" style="flex:1" title="pre-filter saturation (1 = off)">
+            <span class="val" id="f-drive-val">off</span>
+            <label>post</label><input type="range" id="f-post" min="1000" max="8000" value="1000" style="flex:1" title="post-filter saturation">
+            <span class="val" id="f-post-val">off</span>
+          </div>
+          <div class="row">
+            <label>filter 2</label>
+            <select id="f2-mode"><option value="bypass">bypass</option><option value="lowpass">lowpass</option><option value="bandpass">bandpass</option><option value="highpass">highpass</option><option value="notch">notch</option></select>
+            <label>cutoff</label><input type="number" id="f2-cut" class="narrow" min="20" max="12000" step="10" value="200">
+            <label>res</label><input type="number" id="f2-res" class="narrow" min="0" max="0.95" step="0.05" value="0">
+            <select id="f-routing"><option value="serial">serial</option><option value="parallel">parallel</option></select>
+            <label><input type="checkbox" id="f2-static"> static</label>
           </div>
           <canvas id="filter-resp" style="height:70px"></canvas>
         </fieldset>

@@ -1,18 +1,30 @@
 #!/usr/bin/env node
 //
-// Dev server for the authoring tool. Serves the midisynth directory so the
+// Dev server for the authoring tool. Serves the DigidreamSynth (midisynth/) directory so the
 // tool can fetch content/ and test/golden/ alongside its own files, with
 // correct MIME types for ES modules. No COOP/COEP needed -- the worklet
 // imports the wasm as a plain ES6 module.
 //
-//   node tool/serve.js [port]     then open http://localhost:8930/tool/
+//   node tool/serve.js [port] [--host 0.0.0.0] [--root /path/to/dist-web]
+//   then open http://localhost:8930/tool/
+//
+// The same server runs a packaged dist-web bundle on a VPS (--root), but for
+// anything beyond localhost put it behind HTTPS: browsers only allow
+// AudioWorklet (and Web MIDI) in a secure context.
 //
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const root = path.join(__dirname, '..');
-const port = Number(process.argv[2] || 8930);
+let root = path.join(__dirname, '..');
+let host = '127.0.0.1';
+let port = 8930;
+const args = process.argv.slice(2);
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--host') host = args[++i];
+  else if (args[i] === '--root') root = path.resolve(args[++i]);
+  else if (/^\d+$/.test(args[i])) port = Number(args[i]);
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -43,6 +55,6 @@ http.createServer((req, res) => {
     });
     res.end(data);
   });
-}).listen(port, () => {
-  console.log(`midisynth tool: http://localhost:${port}/tool/`);
+}).listen(port, host, () => {
+  console.log(`DigidreamSynth: http://${host}:${port}/tool/ (root ${root})`);
 });

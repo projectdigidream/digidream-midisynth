@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DigidreamSynth — DAW</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #14161a; --panel: #1d2026; --panel2: #23262e; --edge: #32363f;
+    --text: #d6d9e0; --dim: #8a8f9c; --accent: #64b5f6; --accent2: #4a90d9;
+    --good: #7bc67b; --warn: #e0b060; --bad: #e07070; --wave: #6fd66f; --rec: #e05050;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); display: flex; flex-direction: column;
+         font: 13px/1.45 -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 10px; padding: 6px 12px; flex-wrap: wrap;
+           background: var(--panel); border-bottom: 1px solid var(--edge); }
+  header h1 { font-size: 15px; margin: 0 6px 0 0; color: var(--accent); font-weight: 600; }
+  .meter { font-family: ui-monospace, monospace; font-size: 12px; color: var(--dim); }
+  .meter b { color: var(--text); }
+  #pos { font-family: ui-monospace, monospace; font-size: 15px; color: var(--text); min-width: 120px;
+         background: #101318; border: 1px solid var(--edge); border-radius: 5px; padding: 2px 8px; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--edge);
+           border-radius: 5px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.primary { background: var(--accent); color: #10131a; font-weight: 600; }
+  button.active { background: var(--accent); color: #10131a; }
+  button.rec.active { background: var(--rec); color: #fff; }
+  button.small { padding: 2px 8px; font-size: 12px; }
+  select, input[type=text], input[type=number] {
+      background: var(--panel2); color: var(--text);
+      border: 1px solid var(--edge); border-radius: 5px; padding: 4px 8px; }
+  input[type=number] { width: 68px; }
+  input[type=number].narrow { width: 54px; }
+  input[type=range] { accent-color: var(--accent); }
+  textarea { width: 100%; min-height: 260px; background: #121419; color: #cfe3c4;
+             border: 1px solid var(--edge); border-radius: 6px; padding: 8px;
+             font: 12px/1.4 ui-monospace, "SF Mono", monospace; resize: vertical; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 5px 0; }
+  .row label { color: var(--dim); font-size: 12px; }
+  .row .val { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text); min-width: 52px; text-align: right; }
+  .hint { font-size: 11px; color: var(--dim); }
+  .touch-hint { display: none; }   /* shown only on the phone layout */
+  canvas { display: block; width: 100%; border-radius: 6px; background: #101318; border: 1px solid var(--edge); }
+  section { background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  section h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+  fieldset { border: 1px solid var(--edge); border-radius: 6px; margin: 0 0 10px; padding: 8px 10px; }
+  legend { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; padding: 0 5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--dim); font-weight: normal; font-size: 11px; text-transform: uppercase;
+       letter-spacing: 0.06em; padding: 4px 8px; }
+  td { padding: 5px 8px; border-top: 1px solid var(--edge); }
+  td input[type=text] { width: 150px; }
+
+  /* menu */
+  .menu { position: relative; }
+  .menu > button::after { content: ' ▾'; color: var(--dim); }
+  .menu .drop { display: none; position: absolute; top: 100%; left: 0; z-index: 20; min-width: 240px;
+                background: var(--panel2); border: 1px solid var(--edge); border-radius: 6px; padding: 4px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+  .menu.open .drop { display: block; }
+  .drop button { display: block; width: 100%; text-align: left; border: none; background: none;
+                 padding: 6px 10px; border-radius: 4px; }
+  .drop button:hover { background: var(--panel); }
+  .drop hr { border: none; border-top: 1px solid var(--edge); margin: 4px 0; }
+  .drop .sub { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 10px 2px; }
+
+  /* tabs */
+  nav.tabs { display: flex; gap: 2px; padding: 6px 12px 0; background: var(--panel); border-bottom: 1px solid var(--edge); }
+  nav.tabs button { border-radius: 6px 6px 0 0; border-bottom: none; padding: 6px 16px; color: var(--dim); }
+  nav.tabs button.active { background: var(--bg); color: var(--text); border-color: var(--edge); }
+  main { flex: 1; overflow: auto; padding: 12px; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  #log-wrap { position: relative; }
+  #hdr-toggle, #log-toggle { display: none; }   /* phone only */
+  #log { font: 11px/1.5 ui-monospace, monospace; color: var(--dim); height: 88px; overflow-y: auto; white-space: pre-wrap;
+         background: #121419; border-top: 1px solid var(--edge); padding: 6px 12px; }
+  #log .warn { color: var(--warn); } #log .err { color: var(--bad); } #log .ok { color: var(--good); }
+  #overlay { position: fixed; inset: 0; background: rgba(10,12,16,0.94); display: flex; align-items: center;
+             justify-content: center; flex-direction: column; gap: 14px; z-index: 30; }
+  #overlay p { color: var(--dim); max-width: 480px; text-align: center; }
+  #task-toast { position: fixed; right: 16px; bottom: 104px; z-index: 25; width: 280px;
+                background: var(--panel2); border: 1px solid var(--edge); border-radius: 8px;
+                padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: none; }
+  #task-toast .row { margin: 0 0 6px; }
+  #task-label { font-size: 12px; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #task-pct { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); }
+  .tbar { height: 6px; background: var(--panel); border-radius: 3px; overflow: hidden; }
+  #task-bar { height: 100%; width: 0; background: var(--accent); border-radius: 3px; }
+  #task-toast.indet #task-bar { width: 34% !important; animation: ms-task 0.9s ease-in-out infinite alternate; }
+  @keyframes ms-task { from { margin-left: 0; } to { margin-left: 66%; } }
+
+  /* arrange */
+  #arrange { display: grid; grid-template-columns: 300px 1fr; gap: 0; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
+  #track-list { background: var(--panel); border-right: 1px solid var(--edge); }
+  #track-list .thead { height: 24px; border-bottom: 1px solid var(--edge); display: flex; align-items: center;
+                       padding: 0 8px; gap: 6px; font-size: 11px; color: var(--dim); }
+  .trow { height: 68px; border-bottom: 1px solid var(--edge); display: grid; grid-template-columns: 6px 1fr;
+          gap: 8px; align-items: center; padding: 0 8px 0 0; cursor: pointer; overflow: hidden; }
+  .trow.sel { background: var(--panel2); }
+  .trow .sw { width: 6px; height: 100%; }
+  .trow .tbody { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .trow .l1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .trow .l1 input { flex: 1; min-width: 0; background: transparent; border: none; color: var(--text);
+                    font-size: 12px; font-weight: 600; padding: 0; }
+  .trow .l2 { display: flex; gap: 4px; min-width: 0; }
+  .trow .l2 select { font-size: 11px; padding: 2px 4px; min-width: 0; }
+  .trow .l2 select[data-k=ch] { width: 118px; flex: none; }
+  .trow .l2 select[data-k=prog] { flex: 1; text-overflow: ellipsis; }
+  .trow .btns { display: flex; gap: 3px; flex: none; }
+  .trow .btns button { padding: 1px 6px; font-size: 11px; }
+  .trow .btns button.on-m { background: var(--warn); color: #10131a; }
+  .trow .btns button.on-s { background: var(--good); color: #10131a; }
+  .trow .btns button.on-r { background: var(--rec); color: #fff; }
+  #lanes { height: 100%; border: none; border-radius: 0; cursor: crosshair; touch-action: none; }
+  #arr-canvas-wrap { position: relative; overflow: hidden; }
+
+  /* piano roll */
+  #roll { height: 520px; cursor: crosshair; touch-action: none; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .toolbar button.active { background: var(--accent); color: #10131a; }
+
+  /* patch editor (from lib) */
+  #env-canvas { height: 150px; cursor: crosshair; touch-action: none; }
+  #wt-preview { height: 90px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+  .pe .tabs button { border-radius: 5px 5px 0 0; border-bottom: none; padding: 4px 12px; }
+  .subtabs { display: flex; gap: 4px; margin-bottom: 6px; }
+  .subtabs button { font-size: 12px; padding: 3px 10px; }
+  .modrow { display: grid; grid-template-columns: 1fr 1fr 80px 26px; gap: 6px; margin: 4px 0; }
+  #apply-state { font-size: 11px; margin-left: auto; }
+  #apply-state.ok { color: var(--good); } #apply-state.warn { color: var(--warn); } #apply-state.err { color: var(--bad); }
+  #json-drawer { display: none; margin-top: 8px; } #json-drawer.open { display: block; }
+  .lchip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border: 1px solid var(--edge);
+           border-radius: 10px; cursor: pointer; font-size: 11px; color: var(--dim); }
+  .lchip.active { color: var(--text); border-color: var(--accent); }
+  .lchip .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  #kbd { display: flex; position: relative; height: 96px; margin-top: 8px; user-select: none; }
+  .wk { flex: 1; background: #e8e6e1; border: 1px solid #555; border-radius: 0 0 4px 4px; position: relative; cursor: pointer; }
+  .wk.on { background: var(--accent); }
+  .bk { position: absolute; top: 0; width: 60%; height: 62%; background: #1a1a1e; border: 1px solid #000;
+        border-radius: 0 0 3px 3px; left: 70%; z-index: 2; cursor: pointer; }
+  .bk.on { background: var(--accent); }
+  #kbd.pads { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 6px; height: auto; }
+  .pad { border: 1px solid var(--edge); border-radius: 6px; background: var(--panel2); padding: 8px 6px; text-align: center;
+         cursor: pointer; font-size: 11px; color: var(--text); user-select: none; }
+  .pad small { display: block; color: var(--dim); font-size: 10px; margin-top: 2px; }
+  .pad.on { background: var(--accent); color: #10131a; } .pad.on small { color: #10131a; }
+  .pad.sel { border-color: var(--accent); }
+  .pad.lit { border-color: var(--good); box-shadow: 0 0 6px rgba(123,198,123,0.35); }
+  .two { display: grid; grid-template-columns: minmax(340px, 5fr) minmax(480px, 7fr); gap: 12px; }
+  #scope { height: 90px; }
+
+  /* cutter (from lib) */
+  #timeline { height: 170px; cursor: crosshair; touch-action: none; }
+  #region-label { font-family: ui-monospace, monospace; color: var(--accent); }
+
+  /* cues */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .card { background: var(--panel2); border: 1px solid var(--edge); border-radius: 8px; padding: 10px; }
+  .card.now { border-color: var(--good); }
+  .card.pending { border-color: var(--warn); }
+  .card h3 { margin: 0 0 6px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .card .bar { height: 6px; background: var(--panel); border-radius: 3px; overflow: hidden; }
+  .card .bar div { height: 100%; background: var(--good); width: 0; }
+  .card .cnt { font-family: ui-monospace, monospace; font-size: 22px; color: var(--text); }
+  #cue-log { font: 11px/1.5 ui-monospace, monospace; color: var(--dim); max-height: 160px; overflow-y: auto;
+             background: #121419; border-radius: 6px; padding: 6px 8px; }
+  #cue-log .sw { color: var(--good); }
+
+  /* master */
+  #eq-canvas { height: 200px; cursor: crosshair; touch-action: none; }
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .vmeter { height: 12px; background: #101318; border: 1px solid var(--edge); border-radius: 3px; position: relative; overflow: hidden; }
+  .vmeter div { height: 100%; width: 0; background: linear-gradient(90deg, var(--good), var(--warn) 80%, var(--bad)); }
+  .vmeter span { position: absolute; right: 4px; top: -1px; font: 10px ui-monospace, monospace; color: var(--text); }
+  .gr div { background: var(--warn); }
+  .knob { display: grid; grid-template-columns: 90px 1fr 64px; gap: 8px; align-items: center; margin: 3px 0; }
+  .knob label { color: var(--dim); font-size: 12px; }
+  .knob input[type=range] { width: 100%; }
+  .knob .val { font-family: ui-monospace, monospace; font-size: 11px; text-align: right; }
+  .master-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .inst { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .inst:hover { background: var(--panel2); }
+  .inst.lit { background: rgba(123,198,123,0.12); }
+  .inst .prog { font-family: ui-monospace, monospace; color: var(--accent); min-width: 26px; text-align: right; }
+  .inst .now { width: 7px; height: 7px; border-radius: 50%; background: var(--edge); }
+  .inst.lit .now { background: var(--accent); }
+  .inst.snd .now { background: var(--good); box-shadow: 0 0 5px rgba(123,198,123,0.6); }
+  .inst .flag { margin-left: auto; font-size: 10px; color: var(--warn); }
+  .inst .chs { font-family: ui-monospace, monospace; font-size: 10px; color: var(--dim); min-width: 54px; }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--edge); color: var(--dim); }
+  .badge.on { color: var(--good); border-color: var(--good); }
+  .badge.q { color: var(--warn); border-color: var(--warn); }
+
+  /* ---- phones ----------------------------------------------------------
+     Same UI, denser. Input needs nothing: every surface already uses
+     pointer events with touch-action:none, so only the layout gives way.
+     .trow stays exactly ROW_H (68px) — the lane canvas draws to that pitch. */
+  /* The compact layout follows the SIZE of the viewport, not the device:
+     a phone in landscape is 844 wide but under 420 tall, and that is when
+     vertical space matters most. Short-and-wide gets the same treatment as
+     narrow, and a desktop window dragged small gets it too. */
+  @media (max-width: 700px), (max-height: 520px) {
+    /* Android 15 draws edge to edge: keep the chrome out of the cutout. */
+    header { padding: calc(4px + env(safe-area-inset-top)) 8px 4px; gap: 5px; }
+    body { padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+    header h1 { display: none; }
+    header button, header select, header input, header label, .meter { font-size: 11px; }
+    header button { padding: 4px 8px; }
+    #proj-name { width: 88px; }
+    #pos { font-size: 12px; min-width: 74px; padding: 1px 6px; }
+    #volume { width: 90px; }
+    main { padding: 8px; }
+    section { padding: 8px; margin-bottom: 8px; }
+    /* tabs: one row you swipe across, never two */
+    #tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    #tabs::-webkit-scrollbar { display: none; }
+    #tabs button { flex: none; }
+    /* Mouse-only instructions go; the touch equivalents take their place --
+       hiding both left no way to discover delete or scroll on a phone. */
+    span.hint:not(#rec-state):not(.touch-hint) { display: none; }
+    .touch-hint { display: inline; }
+    .touch-hint b { color: var(--text); font-weight: 600; }
+    /* wide grids stack instead of running off-screen */
+    .two, .master-grid, .meters, .cards { grid-template-columns: 1fr; }
+    .knob { grid-template-columns: 66px 1fr 42px; gap: 6px; }
+    .modrow { grid-template-columns: 1fr 1fr 56px 24px; gap: 4px; }
+    #arrange { grid-template-columns: 148px 1fr; }
+    .trow { padding-right: 4px; }
+    .trow .l1 { gap: 3px; }
+    .trow .l2 select[data-k=ch] { width: auto; flex: 1; }
+    .trow .btns { gap: 2px; }
+    .trow .btns button { padding: 1px 3px; font-size: 10px; }
+    #roll { height: 56vh; }
+
+    /* Screen space is the scarce thing on a phone: the header and the log
+       both collapse to a single line and expand on tap. The header keeps the
+       transport visible while collapsed -- that is the part you reach for
+       mid-take, and hiding it would make the bar useless rather than tidy. */
+    #hdr-toggle { display: inline-block; padding: 2px 8px; }
+    header.collapsed { padding-bottom: 2px; }
+    header.collapsed > *:not(.keep) { display: none; }
+    header.collapsed #pos { font-size: 13px; }
+    header:not(.collapsed) #hdr-toggle { transform: rotate(180deg); }
+
+    #log-wrap { border-top: 1px solid var(--edge); }
+    #log-toggle { display: block; position: absolute; right: 6px; top: -1px; z-index: 2;
+                  padding: 0 8px; font-size: 11px; line-height: 16px; border-radius: 0 0 5px 5px; }
+    #log { height: 40vh; }
+    #log-wrap.collapsed #log { height: 17px; padding: 0 12px; line-height: 17px; }  /* the last line, whole */
+    #log-wrap.collapsed #log-toggle { transform: rotate(180deg); }
+    #task-toast { right: 8px; left: 8px; width: auto; bottom: 64px; }
+  }
+
+  /* Landscape phones: every row of chrome costs a third of the sheet, so the
+     header stays one line and the log one line, expanded or not. */
+  @media (max-height: 520px) {
+    header { padding: 2px 8px; gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    header::-webkit-scrollbar { display: none; }
+    header > * { flex: none; }
+    header.collapsed > *:not(.keep) { display: none; }
+    #log { height: 22vh; }
+    #log-wrap.collapsed #log { height: 17px; }
+    #roll { height: 62vh; }
+    main { padding: 6px 8px; }
+    section { padding: 6px; margin-bottom: 6px; }
+    #arrange { grid-template-columns: 148px 1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h1>DigidreamSynth DAW</h1>
+  <p>Arrange, record from a MIDI keyboard, edit in the piano roll, shape the synth patches,
+     master, cut loops and test cue transitions — all on the deterministic engine, in one page.
+     Browser audio needs a gesture to start.</p>
+  <button class="primary" id="start-btn">Start audio</button>
+</div>
+
+<header>
+  <h1>DigidreamSynth DAW</h1>
+  <div class="menu" id="file-menu">
+    <button id="file-btn">File</button>
+    <div class="drop">
+      <button data-act="new">New project</button>
+      <button data-act="open">Open .msproj…</button>
+      <button data-act="save">Save .msproj</button>
+      <hr>
+      <div class="sub">import</div>
+      <button data-act="import-song">Import .mid / .mstk…</button>
+      <button data-act="import-bank">Import bank.json…</button>
+      <button data-act="import-kit">Import kit.json…</button>
+      <button data-act="import-fx">Import fx.json…</button>
+      <button data-act="import-master">Import master.json…</button>
+      <hr>
+      <div class="sub">export</div>
+      <button data-act="export-mid">Export .mid</button>
+      <button data-act="export-mstk">Bake .mstk (with mastering)</button>
+      <button data-act="export-wav">Render .wav</button>
+      <button data-act="export-slices">Export slices (.mstk)</button>
+      <button data-act="export-cues">Export cues.json</button>
+      <hr>
+      <button data-act="export-bank">Export bank.json</button>
+      <button data-act="export-kit">Export kit.json</button>
+      <button data-act="export-fx">Export fx.json</button>
+      <button data-act="export-master">Export master.json</button>
+    </div>
+  </div>
+  <input type="text" id="proj-name" value="untitled" style="width:150px" title="project name">
+  <span style="width:8px"></span>
+  <button id="hdr-toggle" class="keep" title="show the transport controls">▾</button>
+  <button id="btn-play" class="primary keep" title="space">▶</button>
+  <button id="btn-stop" class="keep" title="stop (return to start)">⏹</button>
+  <button id="btn-rec" class="rec" title="record onto the armed track (count-in + click)">● Rec</button>
+  <span id="pos" class="keep">1.1.000</span>
+  <span class="meter"><b id="t-cur">0:00</b></span>
+  <label class="hint">bpm</label><input type="number" id="bpm" class="narrow" min="20" max="400" value="120">
+  <label class="hint">sig</label><input type="number" id="sig-num" class="narrow" min="1" max="32" value="4" style="width:44px">
+  <select id="sig-den"><option>2</option><option selected>4</option><option>8</option><option>16</option></select>
+  <label><input type="checkbox" id="chk-loop" checked> loop</label>
+  <label><input type="checkbox" id="chk-click"> click</label>
+  <label class="hint">count-in</label><input type="number" id="count-in" class="narrow" min="0" max="8" value="1" style="width:44px">
+  <label class="hint">snap</label>
+  <select id="snap"><option>1/1</option><option>1/2</option><option selected>1/4</option><option>1/8</option><option>1/8T</option><option>1/16</option><option>1/16T</option><option>1/32</option><option value="off">off</option></select>
+  <label class="hint" title="delay every second subdivision: 100% is a full triplet shuffle">swing</label>
+  <select id="swing-grid" title="the grid swing is measured against">
+    <option>1/8</option><option selected>1/16</option><option>1/32</option>
+  </select>
+  <input type="number" id="swing-amt" class="narrow" min="0" max="100" value="0" style="width:52px"
+         title="swing amount, percent">
+  <span class="meter" style="margin-left:auto">voices <b id="m-voices">0</b> · <span id="midi-state">MIDI: probing…</span></span>
+  <input type="range" id="volume" min="0" max="300" value="125" style="width:90px" title="volume">
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="arrange" class="active">Arrange</button>
+  <button data-tab="track">Track</button>
+  <button data-tab="synth">Synth</button>
+  <button data-tab="master">Master</button>
+  <button data-tab="cut">Cut &amp; Loop</button>
+  <button data-tab="cues">Cues</button>
+  <button data-tab="fit">Fit</button>
+</nav>
+
+<main>
+  <div class="tab active" id="tab-arrange">
+    <div class="toolbar">
+      <button id="btn-add-track" class="small">＋ track</button>
+      <span class="hint">double-click a lane to edit it · drag on the ruler to set the loop · click a lane to move the playhead</span>
+      <span style="flex:1"></span>
+      <label class="hint">zoom</label><input type="range" id="arr-zoom" min="1" max="100" value="30" style="width:120px">
+    </div>
+    <div id="arrange">
+      <div id="track-list"><div class="thead">tracks</div><div id="track-rows"></div></div>
+      <div id="arr-canvas-wrap"><canvas id="lanes"></canvas></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <canvas id="scope" style="flex:1"></canvas>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-track">
+    <div class="toolbar">
+      <label class="hint">track</label><select id="roll-track"></select>
+      <button id="tool-draw" class="small active" title="D">✎ draw</button>
+      <button id="tool-select" class="small" title="S">▭ select</button>
+      <button id="tool-erase" class="small" title="E">⌫ erase</button>
+      <span class="hint">drag empty = new note · drag note = move · right edge = resize · right-click = delete · ⌫ = delete selection · ⌘/Ctrl+D duplicate · wheel = scroll, ⌘/Ctrl+wheel = zoom · left keys audition · lane: drag paints, shift-drag ramps, right-click erases</span>
+      <span class="hint touch-hint">drag empty = new note · drag note = move · right edge = resize · <b>hold a note to delete it</b> · <b>two fingers to scroll and zoom</b> · erase tool deletes on tap</span>
+      <span style="flex:1"></span>
+      <label class="hint">lane</label>
+      <select id="roll-lane"><option value="vel">velocity</option><option value="1">CC1 mod</option><option value="7">CC7 volume</option>
+        <option value="10">CC10 pan</option><option value="11">CC11 expr</option><option value="64">CC64 sustain</option>
+        <option value="91">CC91 reverb</option><option value="93">CC93 chorus</option><option value="94">CC94 delay</option><option value="bend">pitch bend</option></select>
+      <label class="hint">vel</label><input type="number" id="roll-vel" class="narrow" min="1" max="127" value="100">
+    </div>
+    <canvas id="roll"></canvas>
+    <fieldset style="margin-top:10px">
+      <legend>Record</legend>
+      <div class="row">
+        <label>device</label><select id="rec-device"><option value="">all inputs</option></select>
+        <label>mode</label><select id="rec-mode"><option value="overdub">overdub</option><option value="replace">replace</option></select>
+        <label>quantize</label><select id="rec-quant"><option value="off">off</option><option>1/4</option><option>1/8</option><option>1/16</option><option>1/32</option></select>
+        <label>latency ms</label><input type="number" id="rec-latency" class="narrow" min="-200" max="500" value="0">
+        <span class="hint" id="rec-state">arm a track (R) and press ● Rec — the click counts you in</span>
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="tab" id="tab-synth">
+    <div class="two">
+      <div>
+        <section>
+          <h2>Editing</h2>
+          <div class="row"><span class="hint" id="synth-hint">auditions on the selected track's channel — pick a track in Arrange, or choose any program below</span></div>
+          <div id="synth-instruments"></div>
+        </section>
+      </div>
+      <div><section id="patch-editor-host"></section></div>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-master">
+    <section>
+      <h2 style="display:flex;gap:10px;align-items:center">Mastering
+        <label style="text-transform:none;letter-spacing:0"><input type="checkbox" id="mst-enabled"> enabled</label>
+        <button id="mst-ab" class="small" title="bypass momentarily to compare">A/B bypass</button>
+        <button id="mst-reset" class="small">reset</button>
+        <span class="hint" id="mst-latency"></span>
+      </h2>
+      <div class="master-grid">
+        <div>
+          <fieldset><legend>EQ — drag the handles (shift: Q)</legend>
+            <canvas id="eq-canvas"></canvas>
+            <div class="knob"><label>low shelf</label><input type="range" data-mp="eq.low.hz" min="20" max="500" step="1"><span class="val"></span></div>
+            <div class="knob"><label>low dB</label><input type="range" data-mp="eq.low.db" min="-24" max="24" step="0.5"><span class="val"></span></div>
+            <div class="knob"><label>mid Hz</label><input type="range" data-mp="eq.mid.hz" min="100" max="12000" step="10"><span class="val"></span></div>
+            <div class="knob"><label>mid dB</label><input type="range" data-mp="eq.mid.db" min="-24" max="24" step="0.5"><span class="val"></span></div>
+            <div class="knob"><label>mid Q</label><input type="range" data-mp="eq.mid.q" min="0.5" max="10" step="0.1"><span class="val"></span></div>
+            <div class="knob"><label>high shelf</label><input type="range" data-mp="eq.high.hz" min="1000" max="16000" step="50"><span class="val"></span></div>
+            <div class="knob"><label>high dB</label><input type="range" data-mp="eq.high.db" min="-24" max="24" step="0.5"><span class="val"></span></div>
+          </fieldset>
+          <fieldset><legend>Width &amp; gain</legend>
+            <div class="knob"><label>width</label><input type="range" data-mp="width" min="0" max="2" step="0.05"><span class="val"></span></div>
+            <div class="knob"><label>gain dB</label><input type="range" data-mp="gainDb" min="-24" max="24" step="0.5"><span class="val"></span></div>
+          </fieldset>
+        </div>
+        <div>
+          <fieldset><legend>Compressor</legend>
+            <div class="knob"><label>threshold</label><input type="range" data-mp="comp.thresholdDb" min="-60" max="0" step="0.5"><span class="val"></span></div>
+            <div class="knob"><label>ratio</label><input type="range" data-mp="comp.ratio" min="1" max="20" step="0.1"><span class="val"></span></div>
+            <div class="knob"><label>attack ms</label><input type="range" data-mp="comp.attackMs" min="0.1" max="200" step="0.1"><span class="val"></span></div>
+            <div class="knob"><label>release ms</label><input type="range" data-mp="comp.releaseMs" min="5" max="2000" step="5"><span class="val"></span></div>
+            <div class="knob"><label>makeup dB</label><input type="range" data-mp="comp.makeupDb" min="0" max="24" step="0.5"><span class="val"></span></div>
+            <div class="knob"><label>saturation</label><input type="range" data-mp="satDrive" min="1" max="8" step="0.1" title="bus soft saturation between compressor and limiter"><span class="val"></span></div>
+            <div class="knob"><label>knee dB</label><input type="range" data-mp="comp.kneeDb" min="0" max="24" step="0.5"><span class="val"></span></div>
+            <div class="knob"><label>gain reduction</label><div class="vmeter gr"><div id="mt-gr"></div><span id="mt-gr-v"></span></div><span></span></div>
+          </fieldset>
+          <fieldset><legend>Limiter</legend>
+            <div class="knob"><label>ceiling dB</label><input type="range" data-mp="limiter.ceilingDb" min="-12" max="0" step="0.1"><span class="val"></span></div>
+            <div class="knob"><label>lookahead</label><input type="range" data-mp="limiter.lookaheadBlocks" min="1" max="8" step="1"><span class="val"></span></div>
+            <div class="knob"><label>release ms</label><input type="range" data-mp="limiter.releaseMs" min="1" max="1000" step="1"><span class="val"></span></div>
+            <div class="knob"><label>limiter gain</label><div class="vmeter gr"><div id="mt-lim"></div><span id="mt-lim-v"></span></div><span></span></div>
+          </fieldset>
+          <fieldset><legend>Output</legend>
+            <div class="knob"><label>peak L</label><div class="vmeter"><div id="mt-pl"></div><span id="mt-pl-v"></span></div><span></span></div>
+            <div class="knob"><label>peak R</label><div class="vmeter"><div id="mt-pr"></div><span id="mt-pr-v"></span></div><span></span></div>
+            <div class="knob"><label>RMS L</label><div class="vmeter"><div id="mt-rl"></div><span id="mt-rl-v"></span></div><span></span></div>
+            <div class="knob"><label>RMS R</label><div class="vmeter"><div id="mt-rr"></div><span id="mt-rr-v"></span></div><span></span></div>
+            <div class="knob"><label>loudness</label><span class="hint" id="mt-loud">–</span><span class="hint" id="mt-clips"></span></div>
+            <div class="row"><label><input type="checkbox" id="chk-dither"> dither (TPDF)</label>
+              <span class="hint">meters read the signal entering the soft clip — bypass included</span></div>
+          </fieldset>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Per-channel EQ (mixer strips)</h2>
+      <div class="row">
+        <label>channel</label><select id="ceq-ch"></select>
+        <span class="hint">low shelf 120 Hz · bell · high shelf 6 kHz — flat = zero cost, byte-identical bypass; baked into the .mstk</span>
+      </div>
+      <div class="knob"><label>low dB</label><input type="range" data-ceq="lowDb" min="-24" max="24" step="0.5" value="0"><span class="val"></span></div>
+      <div class="knob"><label>mid dB</label><input type="range" data-ceq="midDb" min="-24" max="24" step="0.5" value="0"><span class="val"></span></div>
+      <div class="knob"><label>mid Hz</label><input type="range" data-ceq="midHz" min="100" max="8000" step="10" value="1000"><span class="val"></span></div>
+      <div class="knob"><label>high dB</label><input type="range" data-ceq="highDb" min="-24" max="24" step="0.5" value="0"><span class="val"></span></div>
+    </section>
+    <section>
+      <h2>Send effects (song-level)</h2>
+      <div class="row"><label style="width:60px">reverb</label>
+        <label>room</label><input type="range" data-fx="reverb:0" min="0" max="1000" value="800" style="flex:1">
+        <label>damp</label><input type="range" data-fx="reverb:1" min="0" max="1000" value="400" style="flex:1"></div>
+      <div class="row"><label style="width:60px"></label>
+        <label>width</label><input type="range" data-fx="reverb:2" min="0" max="1000" value="1000" style="flex:1">
+        <label>wet</label><input type="range" data-fx="reverb:3" min="0" max="1000" value="300" style="flex:1"></div>
+      <div class="row"><label style="width:60px">chorus</label>
+        <label>rate</label><input type="range" data-fx="chorus:0" min="0" max="5000" value="800" style="flex:1">
+        <label>depth</label><input type="range" data-fx="chorus:1" min="0" max="10000" value="3500" style="flex:1">
+        <label>wet</label><input type="range" data-fx="chorus:2" min="0" max="1000" value="200" style="flex:1"></div>
+      <div class="row"><label style="width:60px">delay</label>
+        <label>time</label><input type="range" data-fx="delay:0" min="1000" max="640000" value="320000" style="flex:1" title="ms">
+        <label>fbk</label><input type="range" data-fx="delay:1" min="0" max="900" value="350" style="flex:1">
+        <label>wet</label><input type="range" data-fx="delay:2" min="0" max="1000" value="0" style="flex:1">
+        <label><input type="checkbox" id="fx-pingpong"> ping-pong</label>
+        <span class="hint">send per track: CC94 lane in the piano roll</span></div>
+    </section>
+  </div>
+
+  <div class="tab" id="tab-cut">
+    <div class="toolbar">
+      <button id="cut-bake" class="primary">Bake project → load here</button>
+      <input type="file" id="cut-import" accept=".mstk" style="display:none">
+      <button id="cut-import-btn" class="small">…or load a .mstk</button>
+      <span class="hint">the project is baked in memory (bank/kit/fx/mastering included) and sliced here; slices become cue pieces</span>
+    </div>
+    <div id="cutter-host"></div>
+  </div>
+
+  <div class="tab" id="tab-fit"><div id="fit-host"></div></div>
+
+  <div class="tab" id="tab-cues">
+    <div class="toolbar">
+      <button id="cue-add-project" class="small">＋ whole project as a piece</button>
+      <input type="file" id="cue-import" accept=".mstk" multiple style="display:none">
+      <button id="cue-import-btn" class="small">＋ import .mstk pieces…</button>
+      <label class="hint">crossfade ms</label><input type="number" id="cue-fade" class="narrow" min="20" max="8000" value="800">
+      <button id="cue-stop" class="small">⏹ stop</button>
+      <button id="cue-cancel" class="small" disabled>✕ cancel queued</button>
+      <span class="hint">queue a change and it takes over exactly when the current piece finishes its loop</span>
+    </div>
+    <div class="cards" id="cue-cards"></div>
+    <section style="margin-top:12px"><h2>Transition log</h2><div id="cue-log"></div></section>
+  </div>
+</main>
+<div id="task-toast">
+  <div class="row"><span id="task-label">working…</span><span id="task-pct"></span>
+    <button id="task-cancel" class="small" title="cancel">✕</button></div>
+  <div class="tbar"><div id="task-bar"></div></div>
+</div>
+<div id="log-wrap">
+  <button id="log-toggle" title="show the log">▴</button>
+  <div id="log"></div>
+</div>
+<script type="module" src="daw/app.js"></script>
+</body>
+</html>
