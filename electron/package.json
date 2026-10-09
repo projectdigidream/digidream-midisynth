@@ -1,0 +1,91 @@
+{
+  "name": "digidreamsynth",
+  "productName": "DigidreamSynth",
+  "version": "1.0.0",
+  "description": "Deterministic fixed-point MIDI music studio: arrange, record, synthesise, master and bake .mstk game tracks.",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "node run.js",
+    "stage": "../scripts/package_electron.sh --stage-only",
+    "dist": "../scripts/package_electron.sh",
+    "pack": "../scripts/package_electron.sh --dir"
+  },
+  "devDependencies": {
+    "electron": "^44.4.2",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.digidreamsynth.daw",
+    "productName": "DigidreamSynth",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "payload/**/*",
+      "!payload/serve.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../docs",
+        "to": "docs"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "msproj",
+        "name": "DigidreamSynth project",
+        "role": "Editor"
+      },
+      {
+        "ext": "mstk",
+        "name": "DigidreamSynth track",
+        "role": "Editor"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": null,
+      "darkModeSupport": true
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Audio;AudioVideo;Music"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "author": {
+    "name": "Project Digidream"
+  }
+}

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#272d38"/>
+      <stop offset="1" stop-color="#111319"/>
+    </linearGradient>
+    <linearGradient id="env" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#64b5f6" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#3b6ea8" stop-opacity="0.35"/>
+    </linearGradient>
+    <clipPath id="inside">
+      <path d="M 148 800 L 338 236 L 486 470 L 706 470 L 876 800 Z"/>
+    </clipPath>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <rect x="10" y="10" width="1004" height="1004" rx="221" fill="none" stroke="#39404d" stroke-width="20"/>
+
+  <!-- ADSR envelope: attack, decay, sustain, release -->
+  <path d="M 148 800 L 338 236 L 486 470 L 706 470 L 876 800 Z" fill="url(#env)"/>
+  <path d="M 148 800 L 338 236 L 486 470 L 706 470 L 876 800"
+        fill="none" stroke="#7cc4ff" stroke-width="34" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- the note it shapes -->
+  <g clip-path="url(#inside)">
+    <path d="M 160 660 Q 208 520 256 660 T 352 660 T 448 660 T 544 660 T 640 660 T 736 660 T 832 660 T 900 660"
+          fill="none" stroke="#7bc67b" stroke-width="26" stroke-linecap="round" opacity="0.92"/>
+  </g>
+
+  <circle cx="338" cy="236" r="34" fill="#dcecff"/>
+  <circle cx="486" cy="470" r="26" fill="#dcecff" opacity="0.85"/>
+  <circle cx="706" cy="470" r="26" fill="#dcecff" opacity="0.85"/>
+</svg>
