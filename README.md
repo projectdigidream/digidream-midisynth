@@ -1,4 +1,6 @@
-# midisynth
+# DigidreamSynth
+
+*(directory `midisynth/`; code identifiers keep the `msynth`/`midisynth_` prefixes)*
 
 A fully self-synthesized, **bit-identical deterministic** MIDI music engine —
 wavetable + subtractive synthesis in fixed-point integer math, playable
@@ -28,9 +30,16 @@ src/track/       .mstk baked-track format (bake + load, tree-shaking)
 src/sequencer/   song, sequencer (virtual clock), music_director, SPSC queue
 src/output/      offline WAV renderer + render CLI, sha256
 src/bindings/    embind API (WebSynth) for the WASM build
-content/         gm_bank.json (37 patches + fallback), gm_kit.json (drum kit)
-tool/            web authoring tool (AudioWorklet hosts the WASM engine)
-test/unit/       160 tests / ~15.5k checks
+content/         gm_bank.json (37 patches + fallback), gm_kit.json (drum kit),
+                 dnb_bank.json + dnb_kit.json (liquid DnB voices, all synthesised),
+                 music/dreamy_dnb.msproj + .mstk (the demo track)
+tool/            web tools: patch editor, track cutter, DAW (AudioWorklet hosts the WASM engine)
+tool/lib/        shared panels (synth client, patch editor, cutter, scope, MIDI input)
+tool/daw/        the DAW: project model, JS SMF, arrange, piano roll, recorder, cues, master
+src/output/fit.h patch fitting (finite-difference search); CLI + the DAW's Fit tab share it
+electron/        desktop shell: app:// protocol, native menu, file dialogs (docs in electron/README.md)
+mobile/          Android shell (Capacitor): same payload, WebView at https://localhost
+test/unit/       265 tests / ~27.5k checks
 test/golden/     reference MIDI + pinned PCM hashes
 ```
 
@@ -38,13 +47,14 @@ test/golden/     reference MIDI + pinned PCM hashes
 
 ```sh
 cmake -S . -B build -G Ninja && ninja -C build   # native lib + CLIs + tests
-./build/midisynth_tests                          # unit suite (171 tests)
+./build/midisynth_tests                          # unit suite (265 tests)
 ./scripts/build_wasm.sh                          # tool/dist/midisynth.mjs (repo emsdk)
 ./scripts/run_goldens.sh                         # determinism gate (+wasm cross-check)
+node test/smf_roundtrip.mjs                      # DAW model <-> SMF round trips (node)
 ./scripts/ci.sh                                  # all of the above
-node test/tool_smoke.mjs                         # browser smoke test (needs
-                                                 # `node tool/serve.js` running,
-                                                 # Chrome + puppeteer-core)
+node test/tool_smoke.mjs                         # browser smoke tests (need
+node test/daw_smoke.mjs                          # `node tool/serve.js` running,
+                                                 # Chrome + puppeteer-core in the cwd)
 ```
 
 Render a song offline, or play it live through the OS audio device
@@ -54,9 +64,10 @@ config (examples in `content/fx/`):
 ```sh
 ./build/midisynth_render song.mid out.wav \
     --bank content/patches/gm_bank.json --drums content/drums/gm_kit.json \
-    [--fx content/fx/cathedral.json] [--seconds N] [--loop] [--dither] [--hash]
+    [--fx content/fx/cathedral.json] [--master content/fx/master_default.json] \
+    [--seconds N] [--loop] [--dither] [--hash]
 
-./build/midisynth_play song.mid --bank ... --drums ... [--fx ...] [--loop] \
+./build/midisynth_play song.mid --bank ... --drums ... [--fx ...] [--master ...] [--loop] \
     [--tempo milli] [--volume milli] [--seek ms]
 # prints live position, voices, steals/drops, and render-callback CPU
 # min/avg/max per second (plan §11 diagnostics)
@@ -82,6 +93,58 @@ bank/kit; import replaces the loaded document:
 node tool/serve.js            # then open http://localhost:8930/tool/
 ```
 
+## Hosting the tools
+
+The DAW, patch editor and cutter are static files — host them anywhere:
+
+```sh
+./scripts/build_wasm.sh          # once: the engine module
+./scripts/package_web.sh         # -> dist-web/ + dist-web.tar.gz
+node dist-web/serve.js 8930 --root dist-web    # local check
+```
+
+Deploy `dist-web/` with any static server. Two hard requirements: **HTTPS**
+(browsers gate AudioWorklet and Web MIDI behind a secure context; localhost
+is exempt) and `.mjs` served as `text/javascript`. No COOP/COEP headers are
+needed. Ready-made options in `deploy/`: an nginx site config and a
+`Caddyfile` site (both written as name-based vhosts, so the synth can live
+on a subdomain beside other services on the same box), a `Dockerfile`
+(nginx:alpine), and a systemd unit for the node fallback server. Everything
+runs client-side — the server never executes anything, which is also why the
+same bundle is what the desktop app ships.
+
+### Android app
+
+```sh
+./scripts/package_android.sh     # -> mobile/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Capacitor wraps the same bundle; the WebView serves it from
+`https://localhost` so AudioWorklet and WASM keep their secure context.
+Needs the Android SDK and JDK 21 (the script borrows Android Studio's).
+Saving goes through the Filesystem plugin into `Documents/` — a WebView has
+no download manager. The phone layout is one media query in `tool/daw.html`,
+shared with the browser build. No Web MIDI in a WebView; the UI already says
+so and everything else works.
+
+### Desktop app
+
+```sh
+cd electron && npm install       # once: electron + electron-builder
+npm start                        # the working copy, as an application
+cd .. && ./scripts/package_electron.sh    # .dmg / .exe / .AppImage in electron/dist/
+```
+
+The Electron shell serves the identical `package_web.sh` bundle over a
+private `app://digidream/` origin (no port, no `file://` — ES modules and the
+AudioWorklet need a real secure origin) and adds what a browser cannot: a
+native menu, Save/Save As over the open `.msproj`, native open/import
+dialogs, one folder picker for slice exports, `.msproj`/`.mstk` file
+associations, granted Web MIDI, and boot without the Start-audio click. The
+page code is shared: `tool/lib/desktop.js` uses the shell when it is there
+and falls back to `<a download>` / `<input type=file>` in a browser.
+`electron/README.md` has the details.
+
 ## Baked tracks (.mstk)
 
 The shipping format: `midisynth_bake` compiles MIDI + bank + kit + FX into
@@ -102,6 +165,31 @@ Slices are state-chased at their start (they open sounding exactly like the
 parent did there), close cross-boundary notes, loop whole by default, and
 inherit the parent's content verbatim so sibling slices are always
 crossfade-compatible (`msynth_crossfade_track` is the runtime counterpart).
+
+**Mastering** is part of the deliverable: a deterministic fixed-point chain
+(3-band EQ → compressor → stereo width → gain → lookahead limiter) inside
+the engine, `master.json` / `--master` on the CLIs, baked into the `.mstk`
+(`MSTR` section) so the game plays the mastered result bit-identically.
+Bypassed by default — the goldens are unchanged.
+[docs/PATCH_FORMAT.md §5.1](docs/PATCH_FORMAT.md). `midisynth_bake --to-mid
+track.mstk out.mid` writes a track's song back out as a Standard MIDI File.
+
+## DAW (`/tool/daw.html`)
+
+One page, in-page tabs — **Arrange · Track · Synth · Master · Cut & Loop ·
+Cues** — on the same engine: 1 track = 1 MIDI channel, piano-roll editing
+that hot-swaps the playing song **keeping the position** (the engine diffs
+note/controller state at the playhead instead of cutting), recording from a
+MIDI keyboard with count-in, click track, quantize and overdub/replace, the
+patch editor and the cutter hosted as tabs, the mastering chain with meters,
+and a **cue tester**: pieces (slices, the whole project, imported `.mstk`)
+can be queued to take over **exactly when the current piece finishes its
+loop** (or at the next bar), crossfaded, or chained ("then → B after N
+loops") the way the game will script them; `cues.json` exports the board.
+Projects are `.msproj` JSON holding everything (bank, kit, fx, mastering,
+slices, cue rules); bank/kit/fx/master are also imported/exported as
+standalone files. Runs in a browser, on a static host, or as a standalone
+desktop app (`electron/`). [docs/DAW.md](docs/DAW.md).
 
 ## Patch / kit / FX JSON
 
@@ -158,8 +246,45 @@ Web MIDI input; content (20): fallback + 37-patch curated set + GM kit +
 song FX configs, iterated against a real orchestral SMF — content work is
 ongoing by nature, which is what the tool is for.
 
+Beyond the plan (Sep 2026) — everything below is engine-side, deterministic
+fixed point, and defaults to an exact no-op unless a patch/config asks for it:
+
+* **Live music direction**: song replacement under a running transport
+  (state-diffed, never cut), cue scheduling at loop end / next bar
+  (`Sequencer::queue_next`, `MusicDirector::transition`), piece-switch
+  callbacks; an SMF writer (`exportSmf`, `midisynth_bake --to-mid`).
+* **Mastering**: EQ → compressor → bus saturation → width → gain → lookahead
+  limiter, baked into `.mstk` (`MSTR`), meters; bypass is byte-identical.
+* **Generators**: `custom` (draw/import a cycle), `harmonics` (64-partial
+  histogram), `hardsync`, `chebyshev` (drag-the-curve editor), extended
+  `waveshaper` (inputs, bias, crush/stairs), plus the original five.
+* **Per-layer synthesis**: unison stacks, ring mod (internal carrier),
+  pre/post-filter saturation, an independent second filter
+  (serial/parallel, comb resonator and vowel-morphing formant modes),
+  routable filter drive, 4 LFOs with tempo sync, DAHDSR + looping
+  envelopes, per-note aftertouch (end to end), release velocity, layer
+  start delay (flams), round-robin groups, glide (CC5/65), microtuning.
+* **Mix & sends**: per-channel buses with 3-band channel EQ (flat = exact
+  bypass), a delay/echo send (CC94, ping-pong) beside reverb and chorus.
+* **Precision**: envelopes and voice gain ramps in Q8.24 with per-sample
+  wavetable-morph interpolation — quiet exponential tails glide instead of
+  stair-stepping — and the 16-bit output stage uses first-order
+  error-feedback rounding, so sub-LSB detail from many summed quiet voices
+  survives instead of floor-truncating away (goldens regenerated for both,
+  deliberately). Envelope stages accept DX7-style `attackRate` 0..99 with a
+  documented absolute anchor, plus `keyScaleRate` (faster envelopes up the
+  keyboard).
+* **Tools**: the DAW (`tool/daw.html`, `docs/DAW.md`) with its own model and
+  browser tests; shared `tool/lib/` panels behind all three pages.
+
+Still deferred by design: true cross-layer modulation — voices are
+architecturally independent; the internal-carrier ring mod covers the
+classic sound.
+
 Explicitly deferred (the plan's own open decision): mip crossfading (the
 interface allows it; v1 selects mips at note-on). The plan's other open
-decision — additional wavetable generators — is resolved: pulse, drawbar,
-waveshaper and fm2op ship alongside the additive generator. Out of scope per the plan: SFX playback, game-runtime
-MIDI input, portamento (CC5/CC65 recognized and ignored).
+decision — additional wavetable generators — is resolved well past the
+original ask: nine generators ship (additive, pulse, drawbar, waveshaper,
+chebyshev, harmonics, hardsync, fm2op, custom). Formerly out of scope but
+since implemented: portamento (CC5/CC65 glide). Still out of scope per the
+plan: SFX playback, game-runtime MIDI input.

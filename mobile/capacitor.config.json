@@ -1,0 +1,9 @@
+{
+  "appId": "com.digidreamsynth.daw",
+  "appName": "DigidreamSynth",
+  "webDir": "www",
+  "backgroundColor": "#14161a",
+  "android": {
+    "backgroundColor": "#14161a"
+  }
+}
