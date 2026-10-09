@@ -51,6 +51,48 @@ int msynth_load_track(msynth_ctx* ctx, const uint8_t* track, size_t len,
 int msynth_crossfade_track(msynth_ctx* ctx, const uint8_t* track, size_t len,
                            uint32_t fade_ms, char* report, size_t report_cap);
 
+/* ---- Mastering chain (deterministic; bypassed by default) ----
+ * id = MasterParamId (see src/synth/master_chain.h; 0 = enabled), value in
+ * Q16.16 (Hz, dB, ms, ratio...) or an integer for enabled/lookaheadBlocks.
+ * Queued like every other engine command. */
+void msynth_master_param(msynth_ctx* ctx, int id, int32_t value);
+/* master.json: { "version":1, "master": {...} } or the bare object. */
+int msynth_load_master_json(msynth_ctx* ctx, const char* json, size_t len, char* report,
+                            size_t report_cap);
+typedef struct msynth_master_meters {
+    int32_t peak_l, peak_r;      /* Q8.24 absolute peaks since the last take */
+    uint64_t sumsq_l, sumsq_r;   /* sum of (|v| >> 8)^2 (Q16.16 squared) */
+    uint32_t samples;            /* samples accumulated */
+    int32_t comp_gr_q16;         /* compressor gain reduction, linear, <= 1.0 */
+    int32_t lim_gain_q16;        /* limiter gain, linear, <= 1.0 */
+    uint32_t clips;              /* samples beyond +/-1.0 (soft clip engaged) */
+} msynth_master_meters;
+/* Read and reset the level meters (diagnostics read, like the counters). */
+void msynth_take_master_meters(msynth_ctx* ctx, msynth_master_meters* out);
+
+/* Live editing: swap the song under a running transport keeping the musical
+ * position (voice/controller state is repaired by diffing, never cut).
+ * Accepts .mid or .mstk (song only). Loader rule applies (not concurrent
+ * with render). */
+int msynth_replace_song(msynth_ctx* ctx, const uint8_t* smf_or_track, size_t len,
+                        char* report, size_t report_cap);
+
+/* Cue transitions (horizontal resequencing). mode: 0 = at loop end,
+ * 1 = at next bar, 2 = immediate (crossfade over fade_ms, hard if 0).
+ * Content stays loaded; the incoming track should be a sibling piece. */
+int msynth_queue_track(msynth_ctx* ctx, const uint8_t* track, size_t len, int mode,
+                       uint32_t fade_ms, char* report, size_t report_cap);
+void msynth_cancel_queued(msynth_ctx* ctx);
+int msynth_queued(const msynth_ctx* ctx);
+uint32_t msynth_ms_to_boundary(const msynth_ctx* ctx);
+/* Fired from within msynth_render when a queued piece takes over. */
+typedef void (*msynth_piece_cb)(void* user);
+void msynth_set_piece_callback(msynth_ctx* ctx, msynth_piece_cb cb, void* user);
+
+/* Export the active song as a Standard MIDI File (format 1). Returns the
+ * byte count written (0 on error, or the required size when out is NULL). */
+size_t msynth_export_smf(msynth_ctx* ctx, uint8_t* out, size_t cap);
+
 /* ---- Transport / music direction (queued; any thread) ---- */
 void msynth_play(msynth_ctx* ctx);
 void msynth_pause(msynth_ctx* ctx);

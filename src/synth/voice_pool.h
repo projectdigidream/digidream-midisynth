@@ -3,6 +3,8 @@
 // Flat shared voice pool with group-aware stealing (plan §8). Channel is a
 // tag, not a partition.
 //
+#include <memory>
+
 #include "voice.h"
 
 namespace msynth {
@@ -27,13 +29,15 @@ class VoicePool {
     // rather than stuttering a fresh attack).
     Voice* alloc(u8 outgoing_bank) noexcept;
 
-    Voice* begin() noexcept { return voices_; }
-    Voice* end() noexcept { return voices_ + MAX_VOICES; }
-    const Voice* begin() const noexcept { return voices_; }
-    const Voice* end() const noexcept { return voices_ + MAX_VOICES; }
+    Voice* begin() noexcept { return voices_.get(); }
+    Voice* end() noexcept { return voices_.get() + MAX_VOICES; }
+    const Voice* begin() const noexcept { return voices_.get(); }
+    const Voice* end() const noexcept { return voices_.get() + MAX_VOICES; }
 
     // Group / channel operations.
-    void note_off_group(u8 chan_slot, u8 note, bool pedal_down) noexcept;
+    void note_off_group(u8 chan_slot, u8 note, bool pedal_down, u8 release_vel = 64) noexcept;
+    // Per-note (polyphonic) aftertouch onto every sounding voice of the note.
+    void poly_aftertouch(u8 chan_slot, u8 note, gain_t pressure_q16) noexcept;
     void release_pedal(u8 chan_slot) noexcept;
     void fast_release_channel(u8 chan_slot) noexcept;   // CC120 All Sound Off
     void release_channel(u8 chan_slot, bool pedal_down) noexcept;  // CC123
@@ -46,7 +50,10 @@ class VoicePool {
     void update_active_count() noexcept;
 
   private:
-    Voice voices_[MAX_VOICES];
+    // Heap-owned: a Voice now carries a 16 KB comb delay line, so the pool
+    // is ~2.2 MB -- far too big to live inside stack-allocated engines.
+    // Allocated once at construction (control thread), addresses fixed.
+    std::unique_ptr<Voice[]> voices_ = std::make_unique<Voice[]>(MAX_VOICES);
     u32 next_group_id_ = 1;
     PoolDiagnostics diag_;
 };

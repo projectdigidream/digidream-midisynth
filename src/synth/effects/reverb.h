@@ -7,6 +7,7 @@
 // to the denormal tail slowdowns that plague float reverbs.
 //
 #include "delay_line.h"
+#include "../filter.h"
 
 namespace msynth {
 
@@ -15,6 +16,9 @@ struct ReverbParams {
     gain_t damping = (GAIN_ONE * 4) / 10;    // 0..1
     gain_t width = GAIN_ONE;                 // 0..1
     gain_t wet_gain = (GAIN_ONE * 3) / 10;   // output level of the return
+    // Both default to an exact bypass (0 = the stage is skipped entirely).
+    gain_t pre_delay_ms_q16 = 0;   // 0..200 ms before the tail starts
+    gain_t high_pass_hz_q16 = 0;   // 0..1000 Hz on the send: keeps bass dry
 };
 
 class Reverb {
@@ -48,6 +52,15 @@ class Reverb {
     gain_t feedback_ = 0;
     gain_t damp1_ = 0, damp2_ = GAIN_ONE;
     gain_t wet1_ = 0, wet2_ = 0;  // width mixing
+
+    // Send conditioning, both on the mono sum ahead of the tail: pre-delay
+    // keeps the tail off the transient, the highpass keeps sub and kick out
+    // of it. Zero on either means that stage is not executed at all.
+    DelayLine<14> pre_;           // 16384 samples = 341 ms
+    u32 pre_len_ = 0;
+    FilterCoefs hp_coefs_;
+    FilterState hp_;
+    bool hp_on_ = false;
 };
 
 }  // namespace msynth

@@ -3,7 +3,7 @@
 // self-contained .mstk track -- the music analogue of mapc.
 //
 //   midisynth_bake song.mid -o track.mstk --bank b.json --drums k.json
-//                  [--fx cfg.json] [--name X]
+//                  [--fx cfg.json] [--master m.json] [--name X]
 //                  [--loop-start-tick T --loop-end-tick T]
 //                  [--verify-seconds N]     embed a reference render hash
 //
@@ -20,6 +20,7 @@
 #include "../output/sha256.h"
 #include "../synth/patch_loader.h"
 #include "../track/track.h"
+#include "../midi/smf_writer.h"
 
 using namespace msynth;
 
@@ -79,18 +80,53 @@ static int check_track(const std::string& path) {
     return 0;
 }
 
+// --to-mid: write the SONG section of a track back out as a Standard MIDI
+// File (format 1). Bank/kit/fx are not representable in SMF and are dropped.
+static int track_to_mid(const char* in_path, const char* out_path) {
+    std::vector<u8> bytes;
+    if (!read_file(in_path, bytes)) {
+        std::fprintf(stderr, "cannot read %s\n", in_path);
+        return 1;
+    }
+    TrackData data;
+    LoadResult lr = load_track(bytes.data(), bytes.size(), data);
+    for (auto& w : lr.warnings) std::fprintf(stderr, "warning: %s\n", w.c_str());
+    if (!lr.ok) {
+        for (auto& e : lr.errors) std::fprintf(stderr, "error: %s\n", e.c_str());
+        return 1;
+    }
+    std::vector<u8> smf;
+    LoadResult wr = smf_write(data.song, smf);
+    for (auto& w : wr.warnings) std::fprintf(stderr, "warning: %s\n", w.c_str());
+    if (!wr.ok) {
+        for (auto& e : wr.errors) std::fprintf(stderr, "error: %s\n", e.c_str());
+        return 1;
+    }
+    std::ofstream f(out_path, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(smf.data()), static_cast<std::streamsize>(smf.size()));
+    if (!f) {
+        std::fprintf(stderr, "cannot write %s\n", out_path);
+        return 1;
+    }
+    std::printf("%s -> %s (%zu bytes, %zu events)\n", in_path, out_path, smf.size(),
+                data.song.events.size());
+    return 0;
+}
+
 int main(int argc, char** argv) {
     if (argc >= 3 && std::strcmp(argv[1], "--check") == 0) return check_track(argv[2]);
+    if (argc >= 4 && std::strcmp(argv[1], "--to-mid") == 0) return track_to_mid(argv[2], argv[3]);
     if (argc < 2) {
         std::fprintf(stderr,
                      "usage: %s song.mid -o track.mstk --bank b.json --drums k.json\n"
-                     "       [--fx cfg.json] [--name X] [--loop-start-tick T --loop-end-tick T]\n"
+                     "       [--fx cfg.json] [--master m.json] [--name X] [--loop-start-tick T --loop-end-tick T]\n"
                      "       [--verify-seconds N]\n"
-                     "       %s --check track.mstk\n",
-                     argv[0], argv[0]);
+                     "       %s --check track.mstk\n"
+                     "       %s --to-mid track.mstk out.mid\n",
+                     argv[0], argv[0], argv[0]);
         return 2;
     }
-    std::string midi_path = argv[1], out_path, bank_path, drums_path, fx_path;
+    std::string midi_path = argv[1], out_path, bank_path, drums_path, fx_path, master_path;
     BakeOptions opts;
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
@@ -98,6 +134,7 @@ int main(int argc, char** argv) {
         else if (a == "--bank" && i + 1 < argc) bank_path = argv[++i];
         else if (a == "--drums" && i + 1 < argc) drums_path = argv[++i];
         else if (a == "--fx" && i + 1 < argc) fx_path = argv[++i];
+        else if (a == "--master" && i + 1 < argc) master_path = argv[++i];
         else if (a == "--name" && i + 1 < argc) opts.name = argv[++i];
         else if (a == "--loop-start-tick" && i + 1 < argc) opts.loop_start_tick = std::atoll(argv[++i]);
         else if (a == "--loop-end-tick" && i + 1 < argc) opts.loop_end_tick = std::atoll(argv[++i]);
@@ -120,7 +157,7 @@ int main(int argc, char** argv) {
     }
 
     tables_init();
-    std::vector<u8> smf, bank, drums, fx;
+    std::vector<u8> smf, bank, drums, fx, master;
     if (!read_file(midi_path, smf)) { std::fprintf(stderr, "cannot read %s\n", midi_path.c_str()); return 1; }
     if (!read_file(bank_path, bank)) { std::fprintf(stderr, "cannot read %s\n", bank_path.c_str()); return 1; }
     if (!read_file(drums_path, drums)) { std::fprintf(stderr, "cannot read %s\n", drums_path.c_str()); return 1; }
@@ -128,6 +165,11 @@ int main(int argc, char** argv) {
         if (!read_file(fx_path, fx)) { std::fprintf(stderr, "cannot read %s\n", fx_path.c_str()); return 1; }
         opts.fx_json = reinterpret_cast<const char*>(fx.data());
         opts.fx_json_len = fx.size();
+    }
+    if (!master_path.empty()) {
+        if (!read_file(master_path, master)) { std::fprintf(stderr, "cannot read %s\n", master_path.c_str()); return 1; }
+        opts.master_json = reinterpret_cast<const char*>(master.data());
+        opts.master_json_len = master.size();
     }
 
     std::vector<u8> out;

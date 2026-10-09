@@ -130,3 +130,66 @@ TEST(mod_matrix_negative_amounts) {
     m.evaluate(&r, 1);
     CHECK_EQ(m.dst[static_cast<int>(ModDest::Amplitude)], -GAIN_ONE / 2);
 }
+
+TEST(lfo_tempo_sync_follows_bpm) {
+    LfoParams p;
+    p.shape = LfoShape::Saw;
+    p.sync_beats_q16 = GAIN_ONE;  // one beat per cycle
+    LfoState s;
+    s.note_on(p, 1);
+    // At 120 BPM one beat = 0.5 s = 375 blocks: the saw wraps ~twice/sec.
+    int wraps = 0;
+    i32 prev = -GAIN_ONE;
+    for (int i = 0; i < 750; ++i) {
+        const i32 v = s.advance_block(p, 120 << GAIN_SHIFT);
+        if (v < prev - GAIN_ONE) ++wraps;
+        prev = v;
+    }
+    CHECK_NEAR(wraps, 2, 1);
+    // Double tempo -> double rate.
+    LfoState f;
+    f.note_on(p, 1);
+    wraps = 0;
+    prev = -GAIN_ONE;
+    for (int i = 0; i < 750; ++i) {
+        const i32 v = f.advance_block(p, 240 << GAIN_SHIFT);
+        if (v < prev - GAIN_ONE) ++wraps;
+        prev = v;
+    }
+    CHECK_NEAR(wraps, 4, 1);
+}
+
+TEST(lfo_free_run_keeps_its_phase_across_notes) {
+    LfoParams p;
+    p.shape = LfoShape::Saw;
+    p.inc_per_block = 1u << 24;   // slow sweep
+    p.retrigger = false;
+
+    // Two voices started 100 blocks apart must be 100 blocks apart in phase,
+    // not both back at zero.
+    LfoState a, b;
+    a.note_on(p, 1, 0);
+    b.note_on(p, 2, 100);
+    CHECK_EQ(a.phase, 0u);
+    CHECK_EQ(b.phase, 100u * (1u << 24));
+
+    // ...and the default still restarts every note (goldens depend on it).
+    LfoParams r = p;
+    r.retrigger = true;
+    LfoState c;
+    c.note_on(r, 3, 100);
+    CHECK_EQ(c.phase, 0u);
+}
+
+TEST(lfo_free_run_uses_the_synced_rate) {
+    // A tempo-synced free-running LFO must place itself with the SYNCED
+    // increment, not the unused rateHz one.
+    LfoParams p;
+    p.shape = LfoShape::Sine;
+    p.inc_per_block = 12345;                 // must be ignored
+    p.sync_beats_q16 = 4 * GAIN_ONE;         // one bar at 4/4
+    p.retrigger = false;
+    LfoState s;
+    s.note_on(p, 1, 50, 174 << GAIN_SHIFT);
+    CHECK_EQ(s.phase, static_cast<u32>(50ull * lfo_sync_inc(p.sync_beats_q16, 174 << GAIN_SHIFT)));
+}

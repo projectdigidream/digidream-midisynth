@@ -5,6 +5,9 @@
 //
 #include "test_framework.h"
 
+#include <algorithm>
+#include <cstdio>
+
 #include <fstream>
 
 #include "bindings/c_api.h"
@@ -12,6 +15,7 @@
 #include "output/audio_output_offline.h"
 #include "smf_builder.h"
 #include "track/track.h"
+#include "output/sha256.h"
 
 using namespace msynth;
 using testfw::TrackBuilder;
@@ -454,4 +458,195 @@ TEST(cut_slice_opens_with_correct_pitch) {
     // ~494 Hz over ~0.96s of counted window (bend chased in), not ~440.
     CHECK(crossings > 460);
     msynth_destroy(s);
+}
+
+TEST(mid_entry_points_accept_mstk_everywhere) {
+    // The README invariant: every consumer accepts .mstk wherever it
+    // accepts .mid. The generic C entry points must dispatch on the magic.
+    auto bytes = bake_test_track();
+    msynth_ctx* s = msynth_create();
+    char report[2048];
+    // load_song with track bytes -> full track load (content + song).
+    CHECK_EQ(msynth_load_song(s, bytes.data(), bytes.size(), report, sizeof(report)), 0);
+    msynth_play(s);
+    i16 buf[512 * 2];
+    i64 peak = 0;
+    for (int i = 0; i < 40; ++i) {
+        msynth_render(s, buf, 512);
+        for (i16 v : buf) peak = std::max<i64>(peak, v < 0 ? -v : v);
+    }
+    CHECK(peak > 100);
+    // crossfade_to with track bytes -> routes through the track path
+    // (same-parent slice: no content warning).
+    CutOptions opts;
+    opts.name = "tail";
+    std::vector<u8> slice;
+    CHECK(cut_track(bytes.data(), bytes.size(), 0, 960, opts, slice).ok);
+    CHECK_EQ(msynth_crossfade_to(s, slice.data(), slice.size(), 200, report,
+                                 sizeof(report)), 0);
+    i64 energy = 0;
+    for (int i = 0; i < 60; ++i) {
+        msynth_render(s, buf, 512);
+        for (i16 v : buf) energy += v < 0 ? -v : v;
+    }
+    CHECK(energy > 1000);
+    msynth_destroy(s);
+}
+
+TEST(failed_crossfade_keeps_current_song_playing) {
+    // The silent-then-fatal bug: a crossfade into an unloadable source must
+    // NOT fade the running music into an empty sequencer. It errors and the
+    // current song keeps playing.
+    auto bytes = bake_test_track();
+    msynth_ctx* s = msynth_create();
+    char report[2048];
+    msynth_load_track(s, bytes.data(), bytes.size(), report, sizeof(report));
+    msynth_set_loop(s, 1);
+    msynth_play(s);
+    i16 buf[512 * 2];
+    for (int i = 0; i < 20; ++i) msynth_render(s, buf, 512);
+
+    const u8 garbage[] = "definitely not a song";
+    CHECK(msynth_crossfade_to(s, garbage, sizeof(garbage), 200, report, sizeof(report)) != 0);
+    CHECK(std::string(report).find("keeps playing") != std::string::npos);
+
+    // Corrupt track through the crossfade path: same protection.
+    auto corrupt = bytes;
+    corrupt[corrupt.size() / 2] ^= 1;
+    CHECK(msynth_crossfade_to(s, corrupt.data(), corrupt.size(), 200, report,
+                              sizeof(report)) != 0);
+
+    // Well past any 200ms fade: the original song must still be audible.
+    i64 late = 0;
+    for (int i = 0; i < 120; ++i) {  // ~1.3s
+        msynth_render(s, buf, 512);
+        if (i > 80)
+            for (i16 v : buf) late += v < 0 ? -v : v;
+    }
+    CHECK_EQ(msynth_playing(s), 1);
+    CHECK(late > 1000);
+    msynth_destroy(s);
+}
+
+TEST(track_master_section_roundtrip_and_absent_means_bypass) {
+    // No master: bypass, and the bytes carry no MSTR section.
+    std::vector<u8> plain = bake_test_track();
+    static const u8 kTag[4] = {'M', 'S', 'T', 'R'};
+    CHECK(std::search(plain.begin(), plain.end(), kTag, kTag + 4) == plain.end());
+    TrackData td;
+    CHECK(load_track(plain.data(), plain.size(), td).ok);
+    CHECK(!td.fx.master.enabled);
+    CHECK_EQ(td.fx.master.gain_db, 0);
+
+    // With master.json: every parameter survives the bake.
+    static const char* kMaster = R"({"version":1,"master":{"enabled":true,
+        "eq":{"low":{"hz":90,"db":2.5},"mid":{"hz":1200,"db":-1,"q":1.5},"high":{"hz":7000,"db":1}},
+        "comp":{"thresholdDb":-15,"ratio":2.5,"attackMs":8,"releaseMs":100,"makeupDb":1,"kneeDb":3},
+        "limiter":{"ceilingDb":-0.5,"lookaheadBlocks":4,"releaseMs":40},"width":1.1,"gainDb":-2}})";
+    BakeOptions opts;
+    opts.master_json = kMaster;
+    opts.master_json_len = std::strlen(kMaster);
+    LoadResult rep;
+    std::vector<u8> mastered = bake_test_track(opts, &rep);
+    CHECK(rep.ok);
+    CHECK(std::search(mastered.begin(), mastered.end(), kTag, kTag + 4) != mastered.end());
+    TrackData tm;
+    CHECK(load_track(mastered.data(), mastered.size(), tm).ok);
+    MasterParams expect;
+    LoadResult mr = load_master_config(kMaster, std::strlen(kMaster), expect);
+    CHECK(mr.ok);
+    for (int i = 0; i < static_cast<int>(MasterParamId::COUNT); ++i)
+        CHECK_EQ(tm.fx.master.get(static_cast<MasterParamId>(i)), expect.get(static_cast<MasterParamId>(i)));
+    CHECK_EQ(tm.fx.master.lim_lookahead_blocks, 4);
+
+    // A slice cut from a mastered track inherits the mastering.
+    std::vector<u8> slice;
+    CutOptions co;
+    co.name = "s";
+    CHECK(cut_track(mastered.data(), mastered.size(), 0, 480, co, slice).ok);
+    TrackData ts;
+    CHECK(load_track(slice.data(), slice.size(), ts).ok);
+    CHECK(ts.fx.master.enabled);
+    CHECK_EQ(ts.fx.master.gain_db, expect.gain_db);
+
+    // fx.json "master" is honoured too, and --master overrides it.
+    static const char* kFx = R"({"reverb":{"wetGain":0.2},"master":{"enabled":true,"gainDb":-6}})";
+    BakeOptions fo;
+    fo.fx_json = kFx;
+    fo.fx_json_len = std::strlen(kFx);
+    std::vector<u8> from_fx = bake_test_track(fo);
+    TrackData tf;
+    CHECK(load_track(from_fx.data(), from_fx.size(), tf).ok);
+    CHECK(tf.fx.master.enabled);
+    CHECK_EQ(tf.fx.master.gain_db, -(6 << GAIN_SHIFT));
+    fo.master_json = kMaster;
+    fo.master_json_len = std::strlen(kMaster);
+    std::vector<u8> both = bake_test_track(fo);
+    TrackData tb;
+    CHECK(load_track(both.data(), both.size(), tb).ok);
+    CHECK_EQ(tb.fx.master.gain_db, expect.gain_db);
+    // Bad master JSON fails the bake.
+    BakeOptions bad;
+    bad.master_json = "{{";
+    bad.master_json_len = 2;
+    LoadResult br;
+    bake_test_track(bad, &br);
+    CHECK(!br.ok);
+}
+
+TEST(track_mastered_render_differs_and_is_sealed) {
+    // The render seal covers mastering: a mastered track re-renders
+    // bit-identically to its seal, and differs from the bypass render.
+    static const char* kMaster = R"({"master":{"enabled":true,"gainDb":-6}})";
+    BakeOptions a, b;
+    a.verify_seconds = b.verify_seconds = 1;
+    b.master_json = kMaster;
+    b.master_json_len = std::strlen(kMaster);
+    std::vector<u8> plain = bake_test_track(a), mastered = bake_test_track(b);
+    TrackData tp, tm;
+    CHECK(load_track(plain.data(), plain.size(), tp).ok);
+    CHECK(load_track(mastered.data(), mastered.size(), tm).ok);
+    CHECK(tp.meta.has_render_hash && tm.meta.has_render_hash);
+    CHECK(std::memcmp(tp.meta.render_hash, tm.meta.render_hash, 32) != 0);
+    // Re-render the mastered one exactly as the engine loaders do.
+    WaveTableCache cache;
+    PatchBank bank;
+    DrumKit kit;
+    load_patch_bank(tm.bank_json.data(), tm.bank_json.size(), cache, bank);
+    load_drum_kit(tm.kit_json.data(), tm.kit_json.size(), cache, kit);
+    OfflineRenderer renderer;
+    renderer.engine().set_content(&bank, &kit);
+    push_song_config(renderer.engine(), tm.fx);
+    renderer.director().active().load_parsed(std::move(tm.song));
+    renderer.director().play();
+    std::vector<i16> pcm;
+    renderer.render(pcm, static_cast<u64>(SAMPLE_RATE / BUFFER_FRAMES) * BUFFER_FRAMES);
+    Sha256 h;
+    h.update(pcm.data(), pcm.size() * 2);
+    const std::string hex = h.hex_digest();
+    char stored[65] = {};
+    for (int i = 0; i < 32; ++i) std::snprintf(stored + 2 * i, 3, "%02x", tm.meta.render_hash[i]);
+    CHECK(hex == stored);
+    CHECK(renderer.engine().master().enabled());
+}
+
+TEST(track_bake_and_cut_into_a_reused_buffer) {
+    // The bindings keep one output vector across bakes/cuts: the second
+    // result must not be appended to the first (that produced "corrupt"
+    // slices in the browser).
+    std::vector<u8> buf;
+    auto smf = test_song();
+    CHECK(bake_track(smf.data(), smf.size(), bank_json().data(), bank_json().size(),
+                     kit_json().data(), kit_json().size(), BakeOptions{}, buf).ok);
+    const size_t first = buf.size();
+    std::vector<u8> parent = buf;
+    CutOptions co;
+    co.name = "s";
+    CHECK(cut_track(parent.data(), parent.size(), 0, 480, co, buf).ok);
+    CHECK(buf.size() < first + 64);  // a slice is not bigger than parent + slice
+    TrackData td;
+    CHECK(load_track(buf.data(), buf.size(), td).ok);
+    CHECK(bake_track(smf.data(), smf.size(), bank_json().data(), bank_json().size(),
+                     kit_json().data(), kit_json().size(), BakeOptions{}, buf).ok);
+    CHECK_EQ(buf.size(), first);
 }

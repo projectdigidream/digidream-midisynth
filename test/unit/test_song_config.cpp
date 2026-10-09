@@ -79,3 +79,17 @@ TEST(song_config_applies_to_engine) {
     CHECK_EQ(tail_with(R"({"reverb":{"wetGain":0},"chorus":{"wetGain":0}})"), 0);
     CHECK(tail_with(R"({"reverb":{"wetGain":0.6},"chorus":{"wetGain":0}})") > 20);
 }
+
+TEST(song_config_channel_eq) {
+    SongFxConfig cfg;
+    static const char* kFx = R"({"channelEq":{"1":{"lowDb":-3,"midHz":900,"midDb":2,"highDb":1},
+                                             "10":{"highDb":-6},"17":{"lowDb":1},"x":{}}})";
+    LoadResult r = load_song_config(kFx, std::strlen(kFx), cfg);
+    CHECK(r.ok);
+    CHECK_EQ(cfg.channel_eq[0].low_db_q16, -(3 << GAIN_SHIFT));
+    CHECK_EQ(cfg.channel_eq[0].mid_hz_q16, 900 << GAIN_SHIFT);
+    CHECK_EQ(cfg.channel_eq[9].high_db_q16, -(6 << GAIN_SHIFT));
+    CHECK(cfg.channel_eq[0].active());
+    CHECK(!cfg.channel_eq[1].active());
+    CHECK_EQ(r.warnings.size(), 2);  // channel 17 + non-numeric key
+}

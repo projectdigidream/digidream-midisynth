@@ -105,6 +105,37 @@ i32 log2_q16(u32 v_q16) noexcept {
     return (int_part << GAIN_SHIFT) + (lo << 8) + static_cast<i32>(step_frac);
 }
 
+gain_t exp2_q16(i32 x_q16) noexcept {
+    x_q16 = clamp_i32(x_q16, -(16 << GAIN_SHIFT), (15 << GAIN_SHIFT) - 1);
+    const i32 ip = static_cast<i32>(asr(x_q16, GAIN_SHIFT));      // floor
+    const u32 fp = static_cast<u32>(x_q16) & 0xFFFFu;             // frac in [0,1)
+    // Mantissa 2^frac in Q30 from the 257-entry octave table (1/256 steps).
+    const i32 mant = lerp16(baked::EXP2_Q30[fp >> 8], baked::EXP2_Q30[(fp >> 8) + 1],
+                            (fp & 0xFFu) << 8);
+    const int sh = 14 - ip;  // Q30 -> Q16 then scale by 2^ip
+    if (sh >= 0) return static_cast<gain_t>(asr(mant, sh));
+    return clamp_i32(static_cast<i64>(mant) << (-sh), 0, 0x7FFFFFFF);
+}
+
+gain_t db_to_lin_q16(i32 db_q16) noexcept {
+    // log2(10)/20 = 0.16609640474... in Q24 = 2786513.
+    return exp2_q16(static_cast<i32>(asr(static_cast<i64>(db_q16) * 2786513LL, 24)));
+}
+
+i32 lin_to_db_q16(u32 lin_q16) noexcept {
+    if (lin_q16 == 0) return -(96 << GAIN_SHIFT);
+    // dB = log2(x) * 20*log10(2) = log2(x) * 6.0206; 6.0206 in Q16 = 394565.
+    return static_cast<i32>(asr(static_cast<i64>(log2_q16(lin_q16)) * 394565LL, GAIN_SHIFT));
+}
+
+gain_t onepole_coef_from_ms(i32 ms_q16) noexcept {
+    const i64 tau_blocks_q16 = (static_cast<i64>(ms_q16) * CONTROL_RATE) / 1000;
+    if (tau_blocks_q16 <= 0) return GAIN_ONE;
+    // -log2(e)/tau; log2(e) in Q16 = 94548.
+    const i64 x = -((94548LL << GAIN_SHIFT) / tau_blocks_q16);
+    return GAIN_ONE - exp2_q16(clamp_i32(x, -(16 << GAIN_SHIFT), 0));
+}
+
 i32 cutoff_index_from_hz(i32 hz_q16) noexcept {
     if (hz_q16 <= (20 << GAIN_SHIFT)) return 0;
     const i32 lg = log2_q16(static_cast<u32>(hz_q16)) - log2_q16(20u << GAIN_SHIFT);
@@ -115,6 +146,14 @@ i32 cutoff_index_from_hz(i32 hz_q16) noexcept {
     if (idx > (static_cast<i64>(CUTOFF_STEPS) << GAIN_SHIFT))
         idx = static_cast<i64>(CUTOFF_STEPS) << GAIN_SHIFT;
     return static_cast<i32>(idx);
+}
+
+i32 cutoff_hz_from_index(i32 index_q16) noexcept {
+    // hz = 20 * 2^(index / steps_per_octave); span is log2(12000/20) octaves.
+    index_q16 = clamp_i32(index_q16, 0, CUTOFF_STEPS << GAIN_SHIFT);
+    const i64 oct_q16 = (static_cast<i64>(index_q16) << GAIN_SHIFT) / cutoff_steps_per_octave_q16();
+    const gain_t mul = exp2_q16(static_cast<i32>(clamp_i32(oct_q16, 0, 10 << GAIN_SHIFT)));
+    return static_cast<i32>(clamp_i32(20LL * mul, 20LL << GAIN_SHIFT, 12000LL << GAIN_SHIFT));
 }
 
 coef_t resonance_k(gain_t res_q16) noexcept {

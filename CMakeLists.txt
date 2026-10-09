@@ -33,7 +33,9 @@ add_library(synth_core STATIC
   src/synth/voice_pool.cpp
   src/synth/synth_engine.cpp
   src/synth/effects/reverb.cpp
+  src/synth/master_chain.cpp
   src/midi/smf_parser.cpp
+  src/midi/smf_writer.cpp
   src/track/track.cpp
   src/midi/tempo_map.cpp
   src/sequencer/song.cpp

@@ -39,14 +39,14 @@ int main(int argc, char** argv) {
     if (argc < 3) {
         std::fprintf(stderr,
                      "usage: %s <song.mid> <out.wav> [--seconds N] [--bank b.json] "
-                     "[--drums k.json] [--fx cfg.json] [--dither] [--hash] [--loop]\n",
+                     "[--drums k.json] [--fx cfg.json] [--master m.json] [--dither] [--hash] [--loop]\n",
                      argv[0]);
         return 2;
     }
     const std::string midi_path = argv[1];
     const std::string wav_path = argv[2];
     u64 seconds = 0;
-    std::string bank_path, drums_path, fx_path;
+    std::string bank_path, drums_path, fx_path, master_path;
     bool dither = false, want_hash = false, loop = false;
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
         else if (a == "--bank" && i + 1 < argc) bank_path = argv[++i];
         else if (a == "--drums" && i + 1 < argc) drums_path = argv[++i];
         else if (a == "--fx" && i + 1 < argc) fx_path = argv[++i];
+        else if (a == "--master" && i + 1 < argc) master_path = argv[++i];
         else if (a == "--dither") dither = true;
         else if (a == "--hash") want_hash = true;
         else if (a == "--loop") loop = true;
@@ -128,6 +129,17 @@ int main(int argc, char** argv) {
                                         data.size(), cfg);
         print_report("fx", r.warnings, r.errors);
         if (r.ok) push_song_config(renderer.engine(), cfg);
+    }
+    if (!master_path.empty()) {  // overrides the track's / fx.json's master
+        std::vector<u8> data;
+        if (!read_file(master_path, data)) {
+            std::fprintf(stderr, "cannot read %s\n", master_path.c_str());
+            return 1;
+        }
+        MasterParams mp;
+        LoadResult r = load_master_config(reinterpret_cast<const char*>(data.data()), data.size(), mp);
+        print_report("master", r.warnings, r.errors);
+        if (r.ok) push_master_config(renderer.engine(), mp);
     }
 
     SongLoadReport rep = baked

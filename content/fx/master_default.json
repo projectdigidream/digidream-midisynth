@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "master": {
+    "enabled": true,
+    "eq": {
+      "low":  { "hz": 120,  "db": 0 },
+      "mid":  { "hz": 1000, "db": 0, "q": 1 },
+      "high": { "hz": 8000, "db": 0 }
+    },
+    "comp": {
+      "thresholdDb": -12,
+      "ratio": 2,
+      "attackMs": 10,
+      "releaseMs": 150,
+      "makeupDb": 0,
+      "kneeDb": 6
+    },
+    "limiter": {
+      "ceilingDb": -1,
+      "lookaheadBlocks": 2,
+      "releaseMs": 80
+    },
+    "width": 1.0,
+    "gainDb": 0
+  }
+}

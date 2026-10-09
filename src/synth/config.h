@@ -19,7 +19,7 @@ inline constexpr int MIP_LEVELS = 9;     // ~one per octave of MIDI range
 inline constexpr int MAX_FRAMES = 32;    // wavetable morph resolution
 inline constexpr int MAX_LAYERS = 4;     // oscillator layers per note
 inline constexpr int MAX_NOTES  = 32;    // target simultaneous notes
-inline constexpr int MAX_LFOS   = 2;     // per voice
+inline constexpr int MAX_LFOS   = 4;     // per voice
 inline constexpr int MAX_VOICES = MAX_NOTES * MAX_LAYERS;  // 128
 
 inline constexpr int NUM_MIDI_CHANNELS = 16;

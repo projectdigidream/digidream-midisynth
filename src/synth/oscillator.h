@@ -31,7 +31,8 @@ inline i32 hermite4(const i32* tab, u32 idx, u32 mask, u32 frac16) noexcept {
 struct Oscillator {
     u32 phase = 0;
     u32 phase_inc = 0;
-    i32 frame_pos_q16 = 0;  // morph position in frames, Q16.16
+    i32 frame_pos_q16 = 0;   // morph position in frames, Q16.16
+    i32 frame_delta_q16 = 0;  // per-sample ramp toward the block target
 
     // Fixed at note-on (mip selection):
     const i32* mip_base = nullptr;  // frames of the chosen mip, contiguous
@@ -60,7 +61,23 @@ struct Oscillator {
     void set_frame_pos(i32 pos_q16) noexcept {
         const i32 max_pos = (frame_count - 1) << 16;
         frame_pos_q16 = clamp_i32(pos_q16, 0, max_pos);
+        frame_delta_q16 = 0;
         update_frames();
+    }
+
+    // Ramp toward a new morph position across the control block (64 samples)
+    // instead of jumping once per block: kills wtPos zipper in slow sweeps
+    // and quiet envelope tails.
+    void set_frame_target(i32 pos_q16) noexcept {
+        if (frame_count <= 1) return;
+        const i32 max_pos = (frame_count - 1) << 16;
+        const i32 tgt = clamp_i32(pos_q16, 0, max_pos);
+        frame_delta_q16 = static_cast<i32>(asr(static_cast<i64>(tgt) - frame_pos_q16, 6));
+        if (frame_delta_q16 == 0 && tgt != frame_pos_q16) {
+            // Sub-count slope: land exactly rather than sticking.
+            frame_pos_q16 = tgt;
+            update_frames();
+        }
     }
 
     void update_frames() noexcept {
@@ -73,10 +90,18 @@ struct Oscillator {
         frame_frac16 = static_cast<u32>(frame_pos_q16) & 0xFFFFu;
     }
 
-    // One sample, Q2.30.
-    inline i32 next_q30() noexcept {
-        const u32 idx = phase >> idx_shift;
-        const u32 frac = (phase >> frac_shift) & 0xFFFFu;
+    // One sample, Q2.30. `phase_mod` shifts the read position without
+    // touching the running phase -- that is phase modulation, i.e. FM.
+    inline i32 next_q30(u32 phase_mod = 0) noexcept {
+        if (frame_delta_q16 != 0) {
+            const u32 old_fi = static_cast<u32>(frame_pos_q16) >> 16;
+            frame_pos_q16 += frame_delta_q16;
+            if ((static_cast<u32>(frame_pos_q16) >> 16) != old_fi) update_frames();
+            else frame_frac16 = static_cast<u32>(frame_pos_q16) & 0xFFFFu;
+        }
+        const u32 read = phase + phase_mod;
+        const u32 idx = read >> idx_shift;
+        const u32 frac = (read >> frac_shift) & 0xFFFFu;
         phase += phase_inc;
         const i32 a = hermite4(frame_a, idx, mask, frac);
         if (frame_a == frame_b) return a;

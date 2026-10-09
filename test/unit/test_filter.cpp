@@ -162,3 +162,74 @@ TEST(filter_lowpass_attenuates_high_freq_more_than_low) {
     const i64 high = rms_for(phase_inc_for_cents((10800) << GAIN_SHIFT)); // ~4.2 kHz
     CHECK(low > 8 * high);
 }
+
+TEST(filter_notch_rejects_centre_passes_edges) {
+    // A sine at the cutoff comes out much weaker than one two octaves below
+    // or above it -- the notch is the complement of the bandpass.
+    auto rms_after = [](i32 hz_q16, i32 tone_hz) {
+        FilterCoefs c;
+        c.compute(cutoff_g(cutoff_index_from_hz(hz_q16)), resonance_k(GAIN_ONE / 2));
+        FilterState f;
+        f.reset(c);
+        double acc = 0;
+        u32 phase = 0;
+        const u32 inc = static_cast<u32>((static_cast<u64>(tone_hz) << 32) / SAMPLE_RATE);
+        for (int i = 0; i < 48000; ++i) {
+            const i32 x = sine_q30(phase) >> 1;
+            phase += inc;
+            const i32 y = f.process(x, FilterMode::Notch);
+            if (i > 24000) acc += static_cast<double>(y) * y;
+        }
+        return acc;
+    };
+    const i32 fc = 1000 << GAIN_SHIFT;
+    const double centre = rms_after(fc, 1000), low = rms_after(fc, 250), high = rms_after(fc, 4000);
+    CHECK(centre * 20 < low);
+    CHECK(centre * 20 < high);
+}
+
+TEST(filter_drive_is_identity_at_one_and_saturates_above) {
+    for (i32 x : {0, 1000, -1000, COEF_ONE / 2, -COEF_ONE / 2, COEF_ONE - 1})
+        CHECK_EQ(drive_q30(x, GAIN_ONE), x);  // exact no-op at drive 1 (goldens)
+    // Drive 4 on a half-scale input lands on the soft-clip curve, never past 1.0.
+    const i32 y = drive_q30(COEF_ONE / 2, 4 * GAIN_ONE);
+    CHECK(y > COEF_ONE / 2);
+    CHECK(y <= COEF_ONE);
+    CHECK_EQ(drive_q30(COEF_ONE, 8 * GAIN_ONE), COEF_ONE);
+    CHECK_EQ(drive_q30(-COEF_ONE, 8 * GAIN_ONE), -COEF_ONE);
+    // Odd symmetry (floor rounding allows 1 ulp of asymmetry).
+    CHECK_NEAR(drive_q30(-(COEF_ONE / 3), 3 * GAIN_ONE), -drive_q30(COEF_ONE / 3, 3 * GAIN_ONE), 1);
+}
+
+TEST(filter_24db_rolls_off_steeper_than_12db) {
+    // Two cascaded stages attenuate a tone two octaves above cutoff more than one.
+    auto energy = [](bool two_stages) {
+        FilterCoefs c;
+        c.compute(cutoff_g(cutoff_index_from_hz(500 << GAIN_SHIFT)), resonance_k(0));
+        FilterState a, b;
+        a.reset(c);
+        b.reset(c);
+        double acc = 0;
+        u32 phase = 0;
+        const u32 inc = static_cast<u32>((static_cast<u64>(2000) << 32) / SAMPLE_RATE);
+        for (int i = 0; i < 48000; ++i) {
+            const i32 x = sine_q30(phase) >> 1;
+            phase += inc;
+            i32 y = a.process(x, FilterMode::Lowpass);
+            if (two_stages) y = b.process(y, FilterMode::Lowpass);
+            if (i > 24000) acc += static_cast<double>(y) * y;
+        }
+        return acc;
+    };
+    const double one = energy(false), two = energy(true);
+    CHECK(two * 4 < one);  // at least ~6 dB more attenuation (ideal: 12 dB more)
+}
+
+TEST(cutoff_hz_from_index_inverts_the_mapping) {
+    for (i32 hz : {30, 100, 440, 1000, 4000, 11000}) {
+        const i32 idx = cutoff_index_from_hz(hz << GAIN_SHIFT);
+        const i32 back = cutoff_hz_from_index(idx) >> GAIN_SHIFT;
+        CHECK_NEAR(back, hz, hz / 50 + 2);  // 2% (table + exp2 rounding)
+    }
+    CHECK_EQ(cutoff_hz_from_index(0) >> GAIN_SHIFT, 20);
+}

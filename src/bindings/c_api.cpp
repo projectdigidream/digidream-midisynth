@@ -7,6 +7,7 @@
 #include "../synth/patch_loader.h"
 #include "../synth/song_config.h"
 #include "../track/track.h"
+#include "../midi/smf_writer.h"
 
 using namespace msynth;
 
@@ -97,6 +98,7 @@ int msynth_load_drums_json(msynth_ctx* ctx, const char* json, size_t len, char* 
 
 int msynth_load_song(msynth_ctx* ctx, const uint8_t* smf, size_t len, char* report,
                      size_t cap) {
+    if (is_track(smf, len)) return msynth_load_track(ctx, smf, len, report, cap);
     SongLoadReport r = ctx->director.load_song(smf, len);
     write_report(report, cap, r.warnings, r.errors);
     return r.ok ? 0 : -1;
@@ -165,9 +167,118 @@ int msynth_crossfade_track(msynth_ctx* ctx, const uint8_t* track, size_t len, ui
 
 int msynth_crossfade_to(msynth_ctx* ctx, const uint8_t* smf, size_t len, uint32_t fade_ms,
                         char* report, size_t cap) {
+    if (is_track(smf, len))
+        return msynth_crossfade_track(ctx, smf, len, fade_ms, report, cap);
     SongLoadReport r = ctx->director.crossfade_to(smf, len, fade_ms);
     write_report(report, cap, r.warnings, r.errors);
     return r.ok ? 0 : -1;
+}
+
+void msynth_master_param(msynth_ctx* ctx, int id, int32_t value) {
+    if (id < 0 || id >= static_cast<int>(MasterParamId::COUNT)) return;
+    EngineCommand c;
+    c.type = EngineCommand::Type::MasterParam;
+    c.d1 = static_cast<u8>(id);
+    c.v = value;
+    push_cmd(ctx, c);
+}
+
+int msynth_load_master_json(msynth_ctx* ctx, const char* json, size_t len, char* report,
+                            size_t cap) {
+    MasterParams p;
+    LoadResult r = load_master_config(json, len, p);
+    write_report(report, cap, r.warnings, r.errors);
+    if (!r.ok) return -1;
+    push_master_config(ctx->engine, p);
+    return 0;
+}
+
+void msynth_take_master_meters(msynth_ctx* ctx, msynth_master_meters* out) {
+    const MasterMeters m = ctx->engine.take_master_meters();
+    if (!out) return;
+    out->peak_l = m.peak_l;
+    out->peak_r = m.peak_r;
+    out->sumsq_l = m.sumsq_l;
+    out->sumsq_r = m.sumsq_r;
+    out->samples = m.samples;
+    out->comp_gr_q16 = m.comp_gr;
+    out->lim_gain_q16 = m.lim_gain;
+    out->clips = m.clips;
+}
+
+int msynth_replace_song(msynth_ctx* ctx, const uint8_t* data, size_t len, char* report,
+                        size_t cap) {
+    ParsedSong parsed;
+    LoadResult r;
+    if (is_track(data, len)) {
+        TrackData td;
+        LoadResult lr = load_track(data, len, td);
+        r.warnings = lr.warnings;
+        if (!lr.ok) {
+            write_report(report, cap, lr.warnings, lr.errors);
+            return -1;
+        }
+        parsed = std::move(td.song);
+    } else {
+        ParseResult pr = smf_parse(data, len, parsed);
+        r.warnings = pr.warnings;
+        if (!pr.ok) {
+            write_report(report, cap, pr.warnings, pr.errors);
+            return -1;
+        }
+    }
+    ctx->director.replace_song(std::move(parsed));
+    write_report(report, cap, r.warnings, r.errors);
+    return 0;
+}
+
+int msynth_queue_track(msynth_ctx* ctx, const uint8_t* track, size_t len, int mode,
+                       uint32_t fade_ms, char* report, size_t cap) {
+    ParsedSong parsed;
+    LoadResult r;
+    if (is_track(track, len)) {
+        TrackData td;
+        LoadResult lr = load_track(track, len, td);
+        r.warnings = lr.warnings;
+        if (!lr.ok) {
+            write_report(report, cap, lr.warnings, lr.errors);
+            return -1;
+        }
+        if (ctx->has_content_hash &&
+            std::memcmp(ctx->content_hash, td.meta.content_hash, 32) != 0)
+            r.warn("incoming track was baked with different bank/kit content; "
+                   "it will play with the currently loaded instruments");
+        parsed = std::move(td.song);
+    } else {
+        ParseResult pr = smf_parse(track, len, parsed);
+        r.warnings = pr.warnings;
+        if (!pr.ok) {
+            write_report(report, cap, pr.warnings, pr.errors);
+            return -1;
+        }
+    }
+    const auto m = mode == 1 ? MusicDirector::TransitionMode::AtNextBar
+                 : mode == 2 ? MusicDirector::TransitionMode::Immediate
+                             : MusicDirector::TransitionMode::AtLoopEnd;
+    ctx->director.transition(std::move(parsed), m, fade_ms);
+    write_report(report, cap, r.warnings, r.errors);
+    return 0;
+}
+void msynth_cancel_queued(msynth_ctx* ctx) { ctx->director.cancel_transition(); }
+int msynth_queued(const msynth_ctx* ctx) { return ctx->director.transition_queued() ? 1 : 0; }
+uint32_t msynth_ms_to_boundary(const msynth_ctx* ctx) { return ctx->director.ms_to_boundary(); }
+void msynth_set_piece_callback(msynth_ctx* ctx, msynth_piece_cb cb, void* user) {
+    ctx->director.set_piece_callback(cb, user);
+}
+
+size_t msynth_export_smf(msynth_ctx* ctx, uint8_t* out, size_t cap) {
+    std::vector<u8> bytes;
+    LoadResult r = smf_write(ctx->director.active().song().parsed, bytes);
+    if (!r.ok) return 0;
+    if (!out) return bytes.size();
+    if (bytes.size() > cap) return 0;
+    std::memcpy(out, bytes.data(), bytes.size());
+    return bytes.size();
 }
 
 void msynth_play(msynth_ctx* ctx) { ctx->director.play(); }

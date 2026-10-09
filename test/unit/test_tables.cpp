@@ -151,3 +151,35 @@ TEST(resonance_k_range) {
     CHECK_EQ(resonance_k(GAIN_ONE), resonance_k((95 * GAIN_ONE) / 100));
     CHECK(resonance_k(GAIN_ONE) > 0);
 }
+
+TEST(exp2_and_db_helpers) {
+    CHECK_EQ(exp2_q16(0), GAIN_ONE);
+    CHECK_EQ(exp2_q16(1 << GAIN_SHIFT), 2 * GAIN_ONE);
+    CHECK_EQ(exp2_q16(-(1 << GAIN_SHIFT)), GAIN_ONE / 2);
+    CHECK_NEAR(exp2_q16(GAIN_ONE / 2), 92682, 3);           // sqrt(2)
+    CHECK_NEAR(exp2_q16(10 << GAIN_SHIFT), 1024 * GAIN_ONE, 2);
+    CHECK_EQ(db_to_lin_q16(0), GAIN_ONE);
+    CHECK_NEAR(db_to_lin_q16(6 * GAIN_ONE + 1350), 2 * GAIN_ONE, 40);  // +6.0206 dB
+    CHECK_NEAR(db_to_lin_q16(-20 * GAIN_ONE), GAIN_ONE / 10, 10);
+    CHECK_NEAR(db_to_lin_q16(-6 * GAIN_ONE), 32860, 40);
+    // Monotonic across a wide range.
+    gain_t prev = 0;
+    for (i32 db = -60; db <= 24; ++db) {
+        const gain_t v = db_to_lin_q16(db << GAIN_SHIFT);
+        CHECK(v > prev);
+        prev = v;
+    }
+    CHECK_NEAR(lin_to_db_q16(GAIN_ONE), 0, 20);
+    CHECK_NEAR(lin_to_db_q16(2 * GAIN_ONE), 394565, 400);   // +6.02 dB
+    CHECK_NEAR(lin_to_db_q16(GAIN_ONE / 2), -394565, 400);
+    // One-pole coefficient: 0 ms = instant; longer = smaller; ~63% after tau.
+    CHECK_EQ(onepole_coef_from_ms(0), GAIN_ONE);
+    const gain_t a10 = onepole_coef_from_ms(10 << GAIN_SHIFT);
+    const gain_t a100 = onepole_coef_from_ms(100 << GAIN_SHIFT);
+    CHECK(a10 > a100);
+    CHECK(a100 > 0);
+    // Apply a100 for 75 blocks (=100 ms): value reaches ~1 - 1/e = 0.632.
+    i64 v = 0;
+    for (int i = 0; i < 75; ++i) v += asr((GAIN_ONE - v) * a100, GAIN_SHIFT);
+    CHECK_NEAR(v, 41427, 1500);
+}

@@ -233,17 +233,21 @@ TEST(smf_time_signature_events_kept) {
     CHECK_EQ(song.events[0].d1, 3);
 }
 
-TEST(smf_poly_aftertouch_consumed_not_forwarded) {
+TEST(smf_poly_aftertouch_kept_as_events) {
+    // 0xA0 is a mod source now (ModSource::PolyAftertouch): the parser keeps
+    // the events and the sequencer dispatches them.
     TrackBuilder t;
+    t.tempo(0, 500000);
     t.note_on(0, 0, 60, 100);
-    t.ev(5, {0xA0, 60, 77});  // poly AT
-    t.note_off(5, 0, 60);
+    t.ev(120, {0xA0, 60, 90});
+    t.note_off(360, 0, 60);
     t.end();
+    auto smf = build_smf(0, 480, {t});
     ParsedSong song;
-    auto bytes = build_smf(0, 480, {t});
-    ParseResult r = smf_parse(bytes.data(), bytes.size(), song);
+    ParseResult r = smf_parse(smf.data(), smf.size(), song);
     CHECK(r.ok);
-    CHECK_EQ(song.events.size(), 2);
-    // Parsing continued correctly past it.
-    CHECK_EQ(song.events[1].tick, 10);
+    bool found = false;
+    for (const auto& e : song.events)
+        if (e.kind() == 0xA0 && e.d1 == 60 && e.d2 == 90) found = true;
+    CHECK(found);
 }

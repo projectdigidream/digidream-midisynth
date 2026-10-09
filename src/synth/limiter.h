@@ -51,9 +51,21 @@ struct OutputStage {
     // equally deterministic outputs (plan §3).
     XorShift32 dither_rng{0xD17E4u};
 
-    inline i16 convert(i64 acc_q24) noexcept {
+    // Master gain + duck: the value the mastering chain (or the soft clip
+    // directly) receives. Unclamped Q8.24.
+    inline i64 pre_gain(i64 acc_q24) const noexcept {
         const gain_t mg = gmul(master_gain, duck_cur);
-        const i64 scaled = asr(acc_q24 * mg, GAIN_SHIFT);
+        return asr(acc_q24 * mg, GAIN_SHIFT);
+    }
+    // Soft clip + dither + Q8.24 -> int16 with FIRST-ORDER ERROR FEEDBACK:
+    // the sub-LSB remainder of each sample is carried into the next one
+    // (per channel), so the floor truncation of many quiet summed voices
+    // stops piling up as correlated bias and quantisation noise is pushed
+    // toward Nyquist. Deterministic (pure integer state).
+    // convert() == finish(pre_gain(), chan).
+    i32 nf_err[2] = {0, 0};  // Q8.24 residual per output channel
+
+    inline i16 finish(i64 scaled, int chan) noexcept {
         i64 v = soft_clip_q24(scaled);
         if (dither) {
             // TPDF: sum of two uniforms, +/-1 LSB of the 16-bit output
@@ -62,8 +74,12 @@ struct OutputStage {
             const i32 r2 = static_cast<i32>(dither_rng.next() & 0x1FFu);
             v += r1 + r2 - 0x1FF;
         }
-        return static_cast<i16>(clamp_i32(asr(v, SAMPLE_SHIFT - 15), -32768, 32767));
+        v += nf_err[chan & 1];
+        const i16 out = static_cast<i16>(clamp_i32(asr(v, SAMPLE_SHIFT - 15), -32768, 32767));
+        nf_err[chan & 1] = static_cast<i32>(v - (static_cast<i64>(out) << (SAMPLE_SHIFT - 15)));
+        return out;
     }
+    inline i16 convert(i64 acc_q24, int chan = 0) noexcept { return finish(pre_gain(acc_q24), chan); }
 };
 
 }  // namespace msynth

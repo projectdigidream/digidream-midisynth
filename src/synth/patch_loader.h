@@ -25,6 +25,11 @@ struct LoadResult {
     }
 };
 
+// Tempo-sync spec -> cycle length in beats (Q16), 0 when absent or bad.
+// "1/4", "1/8T" (triplet, x2/3), "1/8." (dotted, x3/2), "2/1". Shared by
+// patch LFOs and fx.json's delay time.
+i32 parse_sync_beats(const std::string& s, LoadResult& r, const std::string& where);
+
 // Parse one patch object (the §13 schema) into `out`.
 LoadResult load_patch(const JsonValue& doc, WaveTableCache& cache, Patch& out);
 

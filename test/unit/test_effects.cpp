@@ -1,6 +1,10 @@
+#include <algorithm>
+#include <vector>
+
 #include "test_framework.h"
 
 #include "synth/effects/chorus.h"
+#include "synth/effects/delay_fx.h"
 #include "synth/effects/delay_line.h"
 #include "synth/effects/reverb.h"
 
@@ -134,4 +138,125 @@ TEST(chorus_wet_output_and_determinism) {
         return sum;
     };
     CHECK_EQ(run(), run());
+}
+
+// ---- Tempo-synced delay -------------------------------------------------
+
+namespace {
+// Where the first echo of a unit impulse lands, in samples.
+int echo_offset(DelayFx& fx, int limit = 40000) {
+    std::vector<i64> in_l(64, 0), in_r(64, 0), out_l(64, 0), out_r(64, 0);
+    in_l[0] = 1LL << SAMPLE_SHIFT;
+    in_r[0] = 1LL << SAMPLE_SHIFT;
+    int n = 0;
+    for (int b = 0; b < limit / 64; ++b) {
+        std::fill(out_l.begin(), out_l.end(), 0);
+        std::fill(out_r.begin(), out_r.end(), 0);
+        fx.process_block(in_l.data(), in_r.data(), out_l.data(), out_r.data(), 64);
+        for (int i = 0; i < 64; ++i)
+            if (out_l[i] != 0) return n + i;
+        std::fill(in_l.begin(), in_l.end(), 0);
+        std::fill(in_r.begin(), in_r.end(), 0);
+        n += 64;
+    }
+    return -1;
+}
+}  // namespace
+
+TEST(delay_sync_follows_tempo) {
+    // A dotted eighth at 174 BPM is 60/174 * 0.75 s = 258.6 ms = 12414 samples.
+    DelayParams p;
+    p.wet_gain = GAIN_ONE;
+    p.sync_beats_q16 = (3 * GAIN_ONE) / 2;  // dotted 1/8 = 0.75 beats... see below
+    // parse_sync_beats("1/8.") = 4/8 * 3/2 = 0.75 beats.
+    p.sync_beats_q16 = (GAIN_ONE * 3) / 4;
+    DelayFx fx;
+    fx.set_params(p);
+    fx.set_tempo(174 << GAIN_SHIFT);
+    CHECK_NEAR(echo_offset(fx), 12414, 70);
+
+    // Same spec at half the tempo is twice as long.
+    DelayFx slow;
+    slow.set_params(p);
+    slow.set_tempo(87 << GAIN_SHIFT);
+    CHECK_NEAR(echo_offset(slow), 24828, 140);
+
+    // Tempo arriving after the params still takes effect.
+    DelayFx late;
+    late.set_tempo(174 << GAIN_SHIFT);
+    late.set_params(p);
+    CHECK_NEAR(echo_offset(late), 12414, 70);
+}
+
+TEST(delay_without_sync_is_milliseconds) {
+    DelayParams p;
+    p.wet_gain = GAIN_ONE;
+    p.time_ms_q16 = 250 << GAIN_SHIFT;  // sync_beats_q16 stays 0
+    DelayFx fx;
+    fx.set_params(p);
+    fx.set_tempo(174 << GAIN_SHIFT);    // must be ignored
+    CHECK_NEAR(echo_offset(fx), 12000, 70);
+}
+
+// ---- Reverb send conditioning -------------------------------------------
+
+TEST(reverb_pre_delay_holds_the_tail_back) {
+    // The tail's own onset is the shortest comb (~1.2k samples), so measure
+    // the SHIFT pre-delay adds rather than an absolute silence.
+    auto first_output = [](gain_t pre_ms) {
+        ReverbParams p;
+        p.wet_gain = GAIN_ONE;
+        p.pre_delay_ms_q16 = pre_ms;
+        Reverb rv;
+        rv.set_params(p);
+        std::vector<i64> in_l(64, 0), in_r(64, 0), out_l(64), out_r(64);
+        in_l[0] = in_r[0] = 8LL << SAMPLE_SHIFT;
+        for (int b = 0; b < 400; ++b) {
+            std::fill(out_l.begin(), out_l.end(), 0);
+            std::fill(out_r.begin(), out_r.end(), 0);
+            rv.process_block(in_l.data(), in_r.data(), out_l.data(), out_r.data(), 64);
+            for (int i = 0; i < 64; ++i)
+                if (out_l[i] != 0) return b * 64 + i;
+            std::fill(in_l.begin(), in_l.end(), 0);
+            std::fill(in_r.begin(), in_r.end(), 0);
+        }
+        return -1;
+    };
+    const int none = first_output(0);
+    const int fifty = first_output(50 << GAIN_SHIFT);
+    CHECK(none > 0);
+    CHECK_NEAR(fifty - none, 2400, 70);   // 50 ms at 48 kHz
+}
+
+TEST(reverb_send_highpass_rejects_bass) {
+    // A 40 Hz tone into a reverb high-passed at 400 Hz should return far less
+    // than the same tone with the filter off.
+    auto tail_energy = [](gain_t hp_hz) {
+        ReverbParams p;
+        p.wet_gain = GAIN_ONE;
+        p.high_pass_hz_q16 = hp_hz;
+        Reverb rv;
+        rv.set_params(p);
+        std::vector<i64> in_l(64), in_r(64), out_l(64), out_r(64);
+        i64 acc = 0;
+        u32 phase = 0;
+        const u32 inc = static_cast<u32>((40ull << 32) / SAMPLE_RATE);
+        for (int b = 0; b < 200; ++b) {
+            for (int i = 0; i < 64; ++i) {
+                const i64 s = asr(static_cast<i64>(sine_q30(phase)), 6);  // Q2.30 -> Q8.24
+                in_l[i] = in_r[i] = s;
+                phase += inc;
+            }
+            std::fill(out_l.begin(), out_l.end(), 0);
+            std::fill(out_r.begin(), out_r.end(), 0);
+            rv.process_block(in_l.data(), in_r.data(), out_l.data(), out_r.data(), 64);
+            if (b > 100)  // let it fill
+                for (int i = 0; i < 64; ++i) acc += out_l[i] < 0 ? -out_l[i] : out_l[i];
+        }
+        return acc;
+    };
+    const i64 open = tail_energy(0);
+    const i64 filtered = tail_energy(400 << GAIN_SHIFT);
+    CHECK(open > 0);
+    CHECK(filtered * 4 < open);
 }

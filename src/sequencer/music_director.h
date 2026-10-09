@@ -66,6 +66,33 @@ class MusicDirector {
     // Defer the crossfade to the next bar boundary of the current song.
     void queue_crossfade_at_next_bar(const u8* smf, size_t len, u32 fade_ms);
 
+    // ---- Cue transitions (horizontal resequencing) ----
+    enum class TransitionMode : u8 {
+        AtLoopEnd,   // hard switch exactly when the current piece's loop ends
+        AtNextBar,   // hard switch on the next bar line
+        Immediate,   // crossfade now (fade_ms > 0) or hard load (fade_ms == 0)
+    };
+    // Content stays loaded: the incoming song must share it (sibling slices
+    // do). Queued modes leave the current song untouched until the boundary.
+    void transition(ParsedSong&& parsed, TransitionMode mode, u32 fade_ms);
+    void cancel_transition() noexcept { active().cancel_queued(); pending_ = false; }
+    bool transition_queued() const noexcept {
+        return const_cast<MusicDirector*>(this)->active().queued() || pending_;
+    }
+    u32 ms_to_boundary() const noexcept {
+        return static_cast<u32>(
+            const_cast<MusicDirector*>(this)->active().samples_to_boundary() * 1000 / SAMPLE_RATE);
+    }
+    void set_piece_callback(Sequencer::PieceCallback cb, void* user) noexcept {
+        seq_[0].set_piece_callback(cb, user);
+        seq_[1].set_piece_callback(cb, user);
+    }
+
+    // ---- Live editing passthrough ----
+    void replace_song(ParsedSong&& parsed, const ReplaceOptions& opt = {}) {
+        active().replace_song_keep_position(std::move(parsed), opt);
+    }
+
     bool crossfading() const noexcept { return fade_blocks_left_ > 0; }
 
     // ---- Drive (call once per render buffer, before engine.render) ----

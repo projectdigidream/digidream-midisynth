@@ -42,7 +42,9 @@ mkdir -p "$OUT"
   "$ROOT/src/synth/voice_pool.cpp" \
   "$ROOT/src/synth/synth_engine.cpp" \
   "$ROOT/src/synth/effects/reverb.cpp" \
+  "$ROOT/src/synth/master_chain.cpp" \
   "$ROOT/src/midi/smf_parser.cpp" \
+  "$ROOT/src/midi/smf_writer.cpp" \
   "$ROOT/src/track/track.cpp" \
   "$ROOT/src/midi/tempo_map.cpp" \
   "$ROOT/src/sequencer/song.cpp" \

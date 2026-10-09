@@ -13,7 +13,9 @@
 
 namespace msynth {
 
-enum class FilterMode : u8 { Bypass, Lowpass, Bandpass, Highpass };
+// Comb and Formant are handled by the voice itself (delay line / triple
+// bandpass); FilterState::process treats them as pass-through.
+enum class FilterMode : u8 { Bypass, Lowpass, Bandpass, Highpass, Notch, Comb, Formant };
 
 // k = 2.0 exactly does not fit Q2.30's [-2, 2); the max representable value
 // is a Q of 0.5 plus one ulp -- indistinguishable.
@@ -77,9 +79,26 @@ struct FilterState {
             case FilterMode::Bandpass: return v1;
             case FilterMode::Highpass:
                 return x - static_cast<i32>(asr(static_cast<i64>(k) * v1, COEF_SHIFT)) - v2;
+            case FilterMode::Notch:  // input minus the unity-peak bandpass
+                return x - static_cast<i32>(asr(static_cast<i64>(k) * v1, COEF_SHIFT));
             default: return x;
         }
     }
 };
+
+// Pre-filter drive: gain then a cubic soft clip in Q2.30 (unity, zero slope
+// at |x| = 1.5; hard limit beyond) -- the subtractive "saturate the input"
+// stage. drive 1.0 is an exact no-op (the curve itself would still bend
+// near full scale, so it returns early; the voice skips the call too).
+inline i32 drive_q30(i32 x, gain_t drive_q16) noexcept {
+    if (drive_q16 == GAIN_ONE) return x;
+    constexpr i64 LIM = (static_cast<i64>(3) << COEF_SHIFT) / 2;  // 1.5
+    i64 y = asr(static_cast<i64>(x) * drive_q16, GAIN_SHIFT);
+    if (y >= LIM) return static_cast<i32>(COEF_ONE);
+    if (y <= -LIM) return -static_cast<i32>(COEF_ONE);
+    const i64 y2 = asr(y * y, COEF_SHIFT);
+    const i64 y3 = asr(y2 * y, COEF_SHIFT);
+    return static_cast<i32>(y - asr(y3 * 9709, GAIN_SHIFT));  // 1/6.75 in Q16 = 9709
+}
 
 }  // namespace msynth

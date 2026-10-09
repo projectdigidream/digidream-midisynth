@@ -1,5 +1,7 @@
 #include "music_director.h"
 
+#include "../track/track.h"
+
 namespace msynth {
 
 void MusicDirector::fade_bank(u8 bank, gain_t target, i32 blocks) {
@@ -14,14 +16,33 @@ void MusicDirector::fade_bank(u8 bank, gain_t target, i32 blocks) {
 }
 
 SongLoadReport MusicDirector::crossfade_to(const u8* smf, size_t len, u32 fade_ms) {
-    SongLoadReport rep = inactive().load(smf, len);
-    begin_crossfade(fade_ms);
+    SongLoadReport rep;
+    if (is_track(smf, len)) {
+        // .mstk accepted wherever .mid is. Only the SONG is taken here --
+        // the engine's loaded content stays (the bindings' track-aware
+        // paths add the content-hash warning; see msynth_crossfade_track).
+        TrackData data;
+        LoadResult lr = load_track(smf, len, data);
+        rep.ok = lr.ok;
+        rep.warnings = lr.warnings;
+        rep.errors = lr.errors;
+        if (lr.ok) {
+            SongLoadReport pr = inactive().load_parsed(std::move(data.song));
+            for (auto& w : pr.warnings) rep.warnings.push_back(w);
+        }
+    } else {
+        rep = inactive().load(smf, len);
+    }
+    // A failed load must NEVER start the fade: that would cross into an
+    // empty sequencer and take the music to silence. Keep the current song.
+    if (rep.ok) begin_crossfade(fade_ms);
+    else rep.errors.push_back("crossfade aborted; current song keeps playing");
     return rep;
 }
 
 SongLoadReport MusicDirector::crossfade_to_parsed(ParsedSong&& parsed, u32 fade_ms) {
     SongLoadReport rep = inactive().load_parsed(std::move(parsed));
-    begin_crossfade(fade_ms);
+    if (rep.ok) begin_crossfade(fade_ms);
     return rep;
 }
 
@@ -46,6 +67,30 @@ void MusicDirector::begin_crossfade(u32 fade_ms) {
     inactive().play();
     active_ ^= 1;
     fade_blocks_left_ = blocks;
+}
+
+void MusicDirector::transition(ParsedSong&& parsed, TransitionMode mode, u32 fade_ms) {
+    Sequencer& seq = active();
+    switch (mode) {
+        case TransitionMode::AtLoopEnd:
+            seq.queue_next(std::move(parsed), QueueAt{true, 0}, true);
+            break;
+        case TransitionMode::AtNextBar: {
+            const u32 target_tick = seq.song().next_bar_tick(seq.current_tick());
+            const u64 at = seq.song().parsed.tempo.tick_to_sample(target_tick);
+            seq.queue_next(std::move(parsed), QueueAt{false, at}, true);
+            break;
+        }
+        case TransitionMode::Immediate:
+            if (fade_ms > 0) {
+                crossfade_to_parsed(std::move(parsed), fade_ms);
+            } else {
+                seq.load_parsed(std::move(parsed));
+                seq.set_loop_enabled(true);
+                seq.play();
+            }
+            break;
+    }
 }
 
 void MusicDirector::queue_crossfade_at_next_bar(const u8* smf, size_t len, u32 fade_ms) {

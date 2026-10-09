@@ -1,0 +1,334 @@
+{
+  "version": 1,
+  "_about": "Dubstep wobble bass, timbre fitted to a real recording. TWO numbers here are load-bearing and both are easy to get wrong: FilterCutoff 1.0 spans the whole 9.2-octave cutoff range, so 0.12 is a ~2-octave sweep and 0.5 is a whoosh; and postDrive is a saturator AFTER the filter, so above ~1.6 it regenerates the harmonics the filter just removed and the wobble stops being audible at all. Grit comes from the pre-filter drive, which the filter then shapes.",
+  "programs": {
+    "1": {
+      "name": "wob_quarter",
+      "layers": [
+        {
+          "_about": "Wobble layer: fitted saw timbre, with the LFO walking the cutoff.",
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 48,
+              "endHarmonics": 48,
+              "falloff": "saw"
+            }
+          },
+          "mixGain": 0.55,
+          "unison": {
+            "voices": 3,
+            "detuneCents": 12.2,
+            "spread": 0.4,
+            "phaseSpread": 1
+          },
+          "ampEnv": {
+            "attack": 4,
+            "decay": 0,
+            "sustain": 1,
+            "release": 70
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 1000,
+            "resonance": 0.62,
+            "slope": 24,
+            "drive": 7.0
+          },
+          "postDrive": 1.55,
+          "lfos": [
+            {
+              "shape": "sine",
+              "sync": "1/4",
+              "retrigger": false
+            }
+          ],
+          "modMatrix": [
+            {
+              "src": "LFO1",
+              "dst": "FilterCutoff",
+              "amount": 0.12
+            },
+            {
+              "src": "ModWheel",
+              "dst": "FilterCutoff",
+              "amount": 0.08
+            }
+          ]
+        },
+        {
+          "_about": "Sub: clean sine an octave below the wobble, mono, centre, quiet.",
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 1,
+              "endHarmonics": 1,
+              "falloff": "flat"
+            }
+          },
+          "detuneCents": -1200,
+          "mixGain": 0.2,
+          "ampEnv": {
+            "attack": 4,
+            "decay": 0,
+            "sustain": 1,
+            "release": 60
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 150,
+            "slope": 24
+          }
+        }
+      ]
+    },
+    "2": {
+      "name": "wob_eighth",
+      "layers": [
+        {
+          "_about": "Wobble layer: fitted saw timbre, with the LFO walking the cutoff.",
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 48,
+              "endHarmonics": 48,
+              "falloff": "saw"
+            }
+          },
+          "mixGain": 0.55,
+          "unison": {
+            "voices": 3,
+            "detuneCents": 12.2,
+            "spread": 0.4,
+            "phaseSpread": 1
+          },
+          "ampEnv": {
+            "attack": 4,
+            "decay": 0,
+            "sustain": 1,
+            "release": 70
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 1000,
+            "resonance": 0.62,
+            "slope": 24,
+            "drive": 7.0
+          },
+          "postDrive": 1.55,
+          "lfos": [
+            {
+              "shape": "sine",
+              "sync": "1/8",
+              "retrigger": false
+            }
+          ],
+          "modMatrix": [
+            {
+              "src": "LFO1",
+              "dst": "FilterCutoff",
+              "amount": 0.12
+            },
+            {
+              "src": "ModWheel",
+              "dst": "FilterCutoff",
+              "amount": 0.08
+            }
+          ]
+        },
+        {
+          "_about": "Sub: clean sine an octave below the wobble, mono, centre, quiet.",
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 1,
+              "endHarmonics": 1,
+              "falloff": "flat"
+            }
+          },
+          "detuneCents": -1200,
+          "mixGain": 0.2,
+          "ampEnv": {
+            "attack": 4,
+            "decay": 0,
+            "sustain": 1,
+            "release": 60
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 150,
+            "slope": 24
+          }
+        }
+      ]
+    },
+    "3": {
+      "name": "wob_sixteenth",
+      "layers": [
+        {
+          "_about": "Wobble layer: fitted saw timbre, with the LFO walking the cutoff.",
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 48,
+              "endHarmonics": 48,
+              "falloff": "saw"
+            }
+          },
+          "mixGain": 0.55,
+          "unison": {
+            "voices": 3,
+            "detuneCents": 12.2,
+            "spread": 0.4,
+            "phaseSpread": 1
+          },
+          "ampEnv": {
+            "attack": 4,
+            "decay": 0,
+            "sustain": 1,
+            "release": 70
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 1000,
+            "resonance": 0.62,
+            "slope": 24,
+            "drive": 7.0
+          },
+          "postDrive": 1.55,
+          "lfos": [
+            {
+              "shape": "sine",
+              "sync": "1/16",
+              "retrigger": false
+            }
+          ],
+          "modMatrix": [
+            {
+              "src": "LFO1",
+              "dst": "FilterCutoff",
+              "amount": 0.12
+            },
+            {
+              "src": "ModWheel",
+              "dst": "FilterCutoff",
+              "amount": 0.08
+            }
+          ]
+        },
+        {
+          "_about": "Sub: clean sine an octave below the wobble, mono, centre, quiet.",
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 1,
+              "endHarmonics": 1,
+              "falloff": "flat"
+            }
+          },
+          "detuneCents": -1200,
+          "mixGain": 0.2,
+          "ampEnv": {
+            "attack": 4,
+            "decay": 0,
+            "sustain": 1,
+            "release": 60
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 150,
+            "slope": 24
+          }
+        }
+      ]
+    },
+    "4": {
+      "name": "wob_talking",
+      "layers": [
+        {
+          "_about": "Wobble layer: fitted saw timbre, with the LFO walking the cutoff.",
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 48,
+              "endHarmonics": 48,
+              "falloff": "saw"
+            }
+          },
+          "mixGain": 0.55,
+          "unison": {
+            "voices": 3,
+            "detuneCents": 12.2,
+            "spread": 0.4,
+            "phaseSpread": 1
+          },
+          "ampEnv": {
+            "attack": 4,
+            "decay": 0,
+            "sustain": 1,
+            "release": 70
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 1000,
+            "resonance": 0.62,
+            "slope": 24,
+            "drive": 7.0
+          },
+          "postDrive": 1.55,
+          "lfos": [
+            {
+              "shape": "triangle",
+              "sync": "1/8",
+              "retrigger": false
+            }
+          ],
+          "modMatrix": [
+            {
+              "src": "LFO1",
+              "dst": "FilterCutoff",
+              "amount": 0.12
+            },
+            {
+              "src": "ModWheel",
+              "dst": "FilterCutoff",
+              "amount": 0.08
+            }
+          ]
+        },
+        {
+          "_about": "Sub: clean sine an octave below the wobble, mono, centre, quiet.",
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 1,
+              "endHarmonics": 1,
+              "falloff": "flat"
+            }
+          },
+          "detuneCents": -1200,
+          "mixGain": 0.2,
+          "ampEnv": {
+            "attack": 4,
+            "decay": 0,
+            "sustain": 1,
+            "release": 60
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 150,
+            "slope": 24
+          }
+        }
+      ]
+    }
+  }
+}

@@ -29,6 +29,16 @@ void Reverb::set_params(const ReverbParams& p) noexcept {
     const gain_t w = p.wet_gain;
     wet1_ = static_cast<gain_t>(asr(static_cast<i64>(w) * (p.width / 2 + GAIN_ONE / 2), GAIN_SHIFT));
     wet2_ = static_cast<gain_t>(asr(static_cast<i64>(w) * ((GAIN_ONE - p.width) / 2), GAIN_SHIFT));
+
+    const i64 pre = asr(static_cast<i64>(p.pre_delay_ms_q16) * SAMPLE_RATE / 1000, GAIN_SHIFT);
+    pre_len_ = static_cast<u32>(clamp_i32(pre, 0, (1 << 14) - 2));
+    hp_on_ = p.high_pass_hz_q16 > 0;
+    if (hp_on_) {
+        // Butterworth-ish Q, the same k the shelf filters use elsewhere.
+        constexpr coef_t K_SQRT2 = 1518500250;
+        hp_coefs_.compute(cutoff_g(cutoff_index_from_hz(p.high_pass_hz_q16)), K_SQRT2);
+        hp_.reset(hp_coefs_);
+    }
 }
 
 void Reverb::clear() noexcept {
@@ -39,14 +49,23 @@ void Reverb::clear() noexcept {
         }
         for (auto& ap : allpass_[c]) ap.line.clear();
     }
+    pre_.clear();
+    hp_.reset(hp_coefs_);
 }
 
 void Reverb::process_block(const i64* in_l, const i64* in_r, i64* out_l, i64* out_r,
                            int n) noexcept {
+    if (hp_on_) hp_.set_block_target(hp_coefs_, 6);
     for (int i = 0; i < n; ++i) {
         // Freeverb feeds a mono-summed, attenuated input to both banks.
-        const i32 input = clamp_i32(asr(in_l[i] + in_r[i], 2), -(8LL << SAMPLE_SHIFT),
-                                    8LL << SAMPLE_SHIFT);
+        i32 input = clamp_i32(asr(in_l[i] + in_r[i], 2), -(8LL << SAMPLE_SHIFT),
+                              8LL << SAMPLE_SHIFT);
+        if (hp_on_) input = hp_.process(input, FilterMode::Highpass);
+        if (pre_len_) {
+            const i32 delayed = pre_.read(pre_len_);
+            pre_.push(input);
+            input = delayed;
+        }
         i32 wet[2] = {0, 0};
         for (int c = 0; c < 2; ++c) {
             i64 acc = 0;

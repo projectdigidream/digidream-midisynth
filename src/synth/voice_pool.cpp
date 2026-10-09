@@ -4,14 +4,14 @@ namespace msynth {
 
 namespace {
 
-constexpr gain_t QUIET_LEVEL = GAIN_ONE / 50;  // -34 dB-ish
+constexpr i32 QUIET_LEVEL = ENV_ONE / 50;  // -34 dB-ish (envelope Q8.24)
 
 // Steal priority (plan §8): released-and-quiet -> oldest released -> quietest
 // sustaining -> oldest sustaining. Lower key steals first. Voices from the
 // outgoing crossfade bank get their class halved -- they're fading anyway.
 u64 steal_key(const Voice& v, bool group_fully_released, u8 outgoing_bank) noexcept {
     u64 cls;
-    const gain_t lvl = v.amp_env.level;
+    const i32 lvl = v.amp_env.level;  // Q8.24; fits 24 bits in the key below
     if (v.released && lvl < QUIET_LEVEL) cls = 2;
     else if (v.released) cls = 4;
     else cls = 6;
@@ -29,7 +29,7 @@ u64 steal_key(const Voice& v, bool group_fully_released, u8 outgoing_bank) noexc
 }  // namespace
 
 Voice* VoicePool::alloc(u8 outgoing_bank) noexcept {
-    for (auto& v : voices_)
+    for (Voice& v : *this)
         if (!v.active) return &v;
 
     // Precompute per-group "fully released" in one pass.
@@ -37,7 +37,7 @@ Voice* VoicePool::alloc(u8 outgoing_bank) noexcept {
     for (int i = 0; i < MAX_VOICES; ++i) {
         const Voice& v = voices_[i];
         bool all = true;
-        for (const auto& w : voices_)
+        for (const Voice& w : *this)
             if (w.active && w.group_id == v.group_id && !w.released) { all = false; break; }
         group_released[i] = all;
     }
@@ -58,52 +58,58 @@ Voice* VoicePool::alloc(u8 outgoing_bank) noexcept {
     // Peers of the victim's group fade out fast (never a hard cut); the victim
     // itself is reused directly -- its envelope re-enters Attack from the
     // current level (Appendix C rule 3), which is the click-free path.
-    for (auto& w : voices_)
+    for (Voice& w : *this)
         if (w.active && &w != best && w.group_id == best->group_id && w.released) w.fast_release();
     best->active = false;
     return best;
 }
 
-void VoicePool::note_off_group(u8 chan_slot, u8 note, bool pedal_down) noexcept {
-    for (auto& v : voices_)
+void VoicePool::note_off_group(u8 chan_slot, u8 note, bool pedal_down, u8 release_vel) noexcept {
+    for (Voice& v : *this)
         if (v.active && v.chan_slot == chan_slot && v.note == note && !v.released)
-            v.note_off(pedal_down);
+            v.note_off(pedal_down, release_vel);
+}
+
+void VoicePool::poly_aftertouch(u8 chan_slot, u8 note, gain_t pressure_q16) noexcept {
+    for (Voice& v : *this)
+        if (v.active && v.chan_slot == chan_slot && v.note == note)
+            v.poly_at_q16 = pressure_q16;
 }
 
 void VoicePool::release_pedal(u8 chan_slot) noexcept {
-    for (auto& v : voices_)
+    for (Voice& v : *this)
         if (v.active && v.chan_slot == chan_slot) v.release_pedal();
 }
 
 void VoicePool::fast_release_channel(u8 chan_slot) noexcept {
-    for (auto& v : voices_)
+    for (Voice& v : *this)
         if (v.active && v.chan_slot == chan_slot) v.fast_release();
 }
 
 void VoicePool::release_channel(u8 chan_slot, bool pedal_down) noexcept {
-    for (auto& v : voices_)
+    for (Voice& v : *this)
         if (v.active && v.chan_slot == chan_slot && !v.released) v.note_off(pedal_down);
 }
 
 void VoicePool::fast_release_all() noexcept {
-    for (auto& v : voices_) v.fast_release();
+    for (Voice& v : *this) v.fast_release();
 }
 
 void VoicePool::fast_release_patch(const Patch* p) noexcept {
-    for (auto& v : voices_)
+    for (Voice& v : *this)
         if (v.active && v.patch == p) v.fast_release();
 }
 
 void VoicePool::retrigger_same_note(u8 chan_slot, u8 note) noexcept {
     // GM-typical retrigger-with-overlap: the old group goes into fast release.
-    for (auto& v : voices_)
+    for (Voice& v : *this)
         if (v.active && v.chan_slot == chan_slot && v.note == note && !v.released)
             v.fast_release();
 }
 
 void VoicePool::choke_group(u8 chan_slot, i8 exclusive_group, u32 keep_group) noexcept {
     if (exclusive_group < 0) return;
-    for (auto& v : voices_)
+    for (Voice& v : *this)
         if (v.active && v.chan_slot == chan_slot && v.group_id != keep_group &&
             v.patch && v.patch->exclusive_group == exclusive_group)
             v.fast_release();
@@ -111,7 +117,7 @@ void VoicePool::choke_group(u8 chan_slot, i8 exclusive_group, u32 keep_group) no
 
 void VoicePool::update_active_count() noexcept {
     i32 n = 0;
-    for (const auto& v : voices_)
+    for (const Voice& v : *this)
         if (v.active) ++n;
     diag_.active_voices = n;
     if (n > diag_.peak_voices) diag_.peak_voices = n;

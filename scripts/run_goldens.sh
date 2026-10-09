@@ -29,6 +29,7 @@ python3 tools/make_test_midi.py > /dev/null
 CASES=(
   "melody:melody.mid:"
   "melody_dither:melody.mid:--dither"
+  "melody_mastered:melody.mid:--master content/fx/master_default.json"
   "drums:drums.mid:"
   "tempos:tempos.mid:--seconds 8"
   "tempos_loop:tempos.mid:--loop --seconds 12"

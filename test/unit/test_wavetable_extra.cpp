@@ -175,3 +175,138 @@ TEST(velocity_curve_tables) {
         CHECK(VEL_SOFT_Q16[v] >= VEL_SOFT_Q16[v - 1]);
     }
 }
+
+TEST(waveshaper_bias_adds_even_harmonics) {
+    WaveTableCache cache;
+    WaveTablePtr sym = gen(cache, "waveshaper", 1, R"({"shape":"soft","startDrive":3,"endDrive":3})");
+    WaveTablePtr asym = gen(cache, "waveshaper", 1, R"({"shape":"soft","startDrive":3,"endDrive":3,"bias":0.4})");
+    const i64 h1 = harmonic_energy(*asym, 0, 0, 1);
+    CHECK(harmonic_energy(*sym, 0, 0, 2) < h1 / 100);   // symmetric: no evens
+    CHECK(harmonic_energy(*asym, 0, 0, 2) > h1 / 20);   // biased: 2nd appears
+}
+
+TEST(waveshaper_input_wave_selects_source) {
+    WaveTableCache cache;
+    // A clean saw input at drive 1 keeps the 1/h series (evens included);
+    // the sine input at the same drive stays close to a sine.
+    WaveTablePtr saw = gen(cache, "waveshaper", 1, R"({"shape":"soft","input":"saw","startDrive":1,"endDrive":1})");
+    WaveTablePtr sine = gen(cache, "waveshaper", 1, R"({"shape":"soft","input":"sine","startDrive":1,"endDrive":1})");
+    CHECK(saw != nullptr && sine != nullptr);
+    CHECK(harmonic_energy(*saw, 0, 0, 2) > harmonic_energy(*saw, 0, 0, 1) / 6);
+    CHECK(harmonic_energy(*sine, 0, 0, 2) < harmonic_energy(*sine, 0, 0, 1) / 50);
+    std::string err;
+    CHECK(gen(cache, "waveshaper", 1, R"({"input":"nope"})", &err) == nullptr);
+    CHECK(err.find("input") != std::string::npos);
+}
+
+TEST(chebyshev_weight_n_is_harmonic_n_at_full_drive) {
+    WaveTableCache cache;
+    WaveTablePtr t = gen(cache, "chebyshev", 1, R"({"weights":[0,0,0,0,1,0,0,0]})");
+    CHECK(t != nullptr);
+    const i64 h5 = harmonic_energy(*t, 0, 0, 5);
+    CHECK(h5 > 0);
+    for (int h = 1; h <= 8; ++h)
+        if (h != 5) CHECK(harmonic_energy(*t, 0, 0, h) < h5 / 50);
+}
+
+TEST(chebyshev_drive_develops_partials_nonlinearly) {
+    WaveTableCache cache;
+    // T5 at low drive barely develops its 5th harmonic; at drive 1 it is pure.
+    WaveTablePtr lo = gen(cache, "chebyshev", 1, R"({"weights":[0,0,0,0,1,0,0,0],"startDrive":0.3,"endDrive":0.3})");
+    WaveTablePtr hi = gen(cache, "chebyshev", 1, R"({"weights":[0,0,0,0,1,0,0,0],"startDrive":1,"endDrive":1})");
+    const i64 lo5 = harmonic_energy(*lo, 0, 0, 5), lo1 = harmonic_energy(*lo, 0, 0, 1);
+    CHECK(lo1 > lo5);  // partial development leaves mostly low content
+    CHECK(harmonic_energy(*hi, 0, 0, 5) > harmonic_energy(*hi, 0, 0, 1) * 20);
+    // Drive morph across frames changes the spectrum.
+    WaveTablePtr sweep = gen(cache, "chebyshev", 4, R"({"weights":[0,0,0,0,1,0,0,0],"startDrive":0.3,"endDrive":1})");
+    CHECK(harmonic_energy(*sweep, 0, 3, 5) > harmonic_energy(*sweep, 0, 0, 5) * 2);
+}
+
+TEST(chebyshev_defaults_and_bad_params) {
+    WaveTableCache cache;
+    // No params -> T1 = plain sine; all-zero weights fall back to a sine too.
+    WaveTablePtr d = gen(cache, "chebyshev", 1, nullptr);
+    CHECK(d != nullptr);
+    CHECK(harmonic_energy(*d, 0, 0, 2) < harmonic_energy(*d, 0, 0, 1) / 100);
+    WaveTablePtr z = gen(cache, "chebyshev", 1, R"({"weights":[0,0,0,0,0,0,0,0]})");
+    CHECK(z != nullptr);
+    CHECK(harmonic_energy(*z, 0, 0, 1) > 0);
+    std::string err;
+    CHECK(gen(cache, "chebyshev", 1, R"({"weights":3})", &err) == nullptr);
+    CHECK(!err.empty());
+}
+
+TEST(waveshaper_crush_and_stairs_shapes) {
+    WaveTableCache cache;
+    WaveTablePtr crush = gen(cache, "waveshaper", 1, R"({"shape":"crush","levels":3,"startDrive":1,"endDrive":1})");
+    WaveTablePtr soft = gen(cache, "waveshaper", 1, R"({"shape":"soft","startDrive":1,"endDrive":1})");
+    CHECK(crush != nullptr && soft != nullptr);
+    // Quantizing to 3 levels creates far more high-harmonic energy than the
+    // smooth curve at the same drive.
+    i64 hi_crush = 0, hi_soft = 0;
+    for (int h = 7; h <= 15; h += 2) {
+        hi_crush += harmonic_energy(*crush, 0, 0, h);
+        hi_soft += harmonic_energy(*soft, 0, 0, h);
+    }
+    CHECK(hi_crush > hi_soft * 4);
+    WaveTablePtr stairs = gen(cache, "waveshaper", 1, R"({"shape":"stairs","steps":8,"startDrive":1,"endDrive":1})");
+    CHECK(stairs != nullptr);
+    CHECK(harmonic_energy(*stairs, 0, 0, 7) > harmonic_energy(*soft, 0, 0, 7) * 2);
+    std::string err;
+    CHECK(gen(cache, "waveshaper", 1, R"({"shape":"nope2"})", &err) == nullptr);
+}
+
+TEST(harmonics_places_exact_partials_and_morphs) {
+    WaveTableCache cache;
+    WaveTablePtr t = gen(cache, "harmonics", 1, R"({"amps":[0,0,1,0,0,0.5]})");
+    CHECK(t != nullptr);
+    const i64 h3 = harmonic_energy(*t, 0, 0, 3);
+    const i64 h6 = harmonic_energy(*t, 0, 0, 6);
+    CHECK(h3 > 0);
+    CHECK(h6 * 3 > h3 && h6 < h3);          // 0.5 vs 1.0 (post-normalization ratio kept)
+    CHECK(harmonic_energy(*t, 0, 0, 1) < h3 / 50);
+    CHECK(harmonic_energy(*t, 0, 0, 2) < h3 / 50);
+    // Morph to a different recipe.
+    WaveTablePtr m = gen(cache, "harmonics", 4, R"({"amps":[1],"endAmps":[0,0,0,1]})");
+    CHECK(harmonic_energy(*m, 0, 0, 1) > harmonic_energy(*m, 0, 0, 4) * 10);
+    CHECK(harmonic_energy(*m, 0, 3, 4) > harmonic_energy(*m, 0, 3, 1) * 10);
+    // Defaults / silence fall back to a sine; bad params error.
+    WaveTablePtr z = gen(cache, "harmonics", 1, R"({"amps":[0,0]})");
+    CHECK(harmonic_energy(*z, 0, 0, 1) > 0);
+    std::string err;
+    CHECK(gen(cache, "harmonics", 1, R"({"amps":7})", &err) == nullptr);
+}
+
+TEST(hardsync_ratio_one_is_plain_slave_and_sweep_brightens) {
+    WaveTableCache cache;
+    // ratio 1 saw == a saw: strong 1/h series.
+    WaveTablePtr saw = gen(cache, "hardsync", 1, R"({"startRatio":1,"endRatio":1})");
+    CHECK(saw != nullptr);
+    const i64 h1 = harmonic_energy(*saw, 0, 0, 1);
+    CHECK(harmonic_energy(*saw, 0, 0, 2) > h1 / 6);
+    // A fractional ratio shifts energy toward the partials around the slave
+    // frequency: harmonic 3 dominates harmonic 1 at ratio 2.6.
+    WaveTablePtr sync = gen(cache, "hardsync", 1, R"({"startRatio":2.6,"endRatio":2.6})");
+    CHECK(harmonic_energy(*sync, 0, 0, 3) > harmonic_energy(*sync, 0, 0, 1));
+    // The classic sweep changes the spectrum across frames.
+    WaveTablePtr sweep = gen(cache, "hardsync", 4, R"({"startRatio":1,"endRatio":4})");
+    CHECK(harmonic_energy(*sweep, 0, 3, 4) > harmonic_energy(*sweep, 0, 0, 4) * 3);
+    // Pulse slave + bad slave name.
+    CHECK(gen(cache, "hardsync", 1, R"({"slave":"pulse","startRatio":2,"endRatio":2})") != nullptr);
+    std::string err;
+    CHECK(gen(cache, "hardsync", 1, R"({"slave":"square"})", &err) == nullptr);
+}
+
+TEST(custom_cycle_generator) {
+    WaveTableCache cache;
+    // A drawn ramp: behaves like a saw (evens present), band-limited mips.
+    std::string ramp = "[";
+    for (int i = 0; i < 64; ++i) ramp += (i ? "," : "") + std::to_string((i - 32) / 32.0).substr(0, 8);
+    ramp += "]";
+    WaveTablePtr t = gen(cache, "custom", 1, ("{\"samples\":" + ramp + "}").c_str());
+    CHECK(t != nullptr);
+    CHECK(harmonic_energy(*t, 0, 0, 2) > harmonic_energy(*t, 0, 0, 1) / 8);
+    std::string err;
+    CHECK(gen(cache, "custom", 1, R"({"samples": 4})", &err) == nullptr);
+    CHECK(gen(cache, "custom", 1, nullptr, &err) == nullptr);  // needs samples
+}

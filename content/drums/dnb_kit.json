@@ -1,0 +1,518 @@
+{
+  "version": 1,
+  "_about": "A synthesised break kit for ~174 BPM. No samples: the snare is a tuned body plus pink noise, the cymbals are the inharmonic metal oscillator, and ghost notes come from velocity rather than from separate sounds -- play 38 softly and it thins out by itself.",
+  "notes": {
+    "36": {
+      "name": "dnb_kick",
+      "oneShot": true,
+      "layers": [
+        {
+          "_about": "Body: a sine dropped fast from a high start. Short, so it never fights the sub.",
+          "pitchNote": 33,
+          "mixGain": 0.72,
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 1,
+              "endHarmonics": 1,
+              "falloff": "flat"
+            }
+          },
+          "ampEnv": {
+            "attack": 0,
+            "decay": 200,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "pitchEnv": {
+            "attack": 0,
+            "decay": 26,
+            "sustain": 0,
+            "release": 0,
+            "depthSemis": 30
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 1400,
+            "drive": 2.4
+          }
+        },
+        {
+          "_about": "Beater click so it reads on small speakers.",
+          "osc": "noise",
+          "noiseColor": "white",
+          "mixGain": 0.18,
+          "ampEnv": {
+            "attack": 0,
+            "decay": 12,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 2600,
+            "resonance": 0.3
+          }
+        }
+      ]
+    },
+    "38": {
+      "name": "dnb_snare",
+      "oneShot": true,
+      "_about": "Velocity does the ghosting: soft hits lose the body and darken the noise.",
+      "layers": [
+        {
+          "_about": "Shell: the drum itself, and on a real snare this is most of the sound. Lowpassed, not bandpassed at 1.9 kHz where the tone does not reach.",
+          "pitchNote": 55,
+          "mixGain": 0.8,
+          "velCurve": "soft",
+          "wavetable": {
+            "generator": "additiveHarmonicMorph",
+            "frameCount": 1,
+            "params": {
+              "startHarmonics": 3,
+              "endHarmonics": 3,
+              "falloff": "saw"
+            }
+          },
+          "ampEnv": {
+            "attack": 0,
+            "decay": 135,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "pitchEnv": {
+            "attack": 0,
+            "decay": 28,
+            "sustain": 0,
+            "release": 0,
+            "depthSemis": 5
+          },
+          "filter": {
+            "mode": "lowpass",
+            "cutoffHz": 820,
+            "resonance": 0.25,
+            "drive": 1.7
+          },
+          "modMatrix": [
+            {
+              "src": "Velocity",
+              "dst": "Amplitude",
+              "amount": 0.35
+            }
+          ]
+        },
+        {
+          "_about": "Wires: the buzz. Band-limited on both sides so it reads as snares, not as white hiss.",
+          "osc": "noise",
+          "noiseColor": "pink",
+          "mixGain": 0.7,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 175,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "highpass",
+            "cutoffHz": 1500,
+            "slope": 12
+          },
+          "filter2": {
+            "mode": "lowpass",
+            "cutoffHz": 9000
+          },
+          "sendReverb": 0.165,
+          "modMatrix": [
+            {
+              "src": "Velocity",
+              "dst": "FilterCutoff",
+              "amount": 0.25
+            }
+          ]
+        },
+        {
+          "_about": "A short snap for the transient, kept quiet -- it was dominating.",
+          "osc": "noise",
+          "noiseColor": "white",
+          "mixGain": 0.4,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 30,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 3400,
+            "resonance": 0.25
+          }
+        }
+      ]
+    },
+    "37": {
+      "name": "dnb_rim",
+      "oneShot": true,
+      "layers": [
+        {
+          "osc": "noise",
+          "noiseColor": "white",
+          "mixGain": 0.3,
+          "ampEnv": {
+            "attack": 0,
+            "decay": 26,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 2400,
+            "resonance": 0.7
+          }
+        }
+      ]
+    },
+    "39": {
+      "name": "dnb_clap",
+      "oneShot": true,
+      "_about": "Three noise bursts a few milliseconds apart -- a real clap is several hands, not one.",
+      "layers": [
+        {
+          "osc": "noise",
+          "noiseColor": "pink",
+          "mixGain": 0.45,
+          "startDelayMs": 0,
+          "ampEnv": {
+            "attack": 0,
+            "decay": 22,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 1500,
+            "resonance": 0.4
+          }
+        },
+        {
+          "osc": "noise",
+          "noiseColor": "pink",
+          "mixGain": 0.45,
+          "startDelayMs": 11,
+          "ampEnv": {
+            "attack": 0,
+            "decay": 22,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 1500,
+            "resonance": 0.4
+          }
+        },
+        {
+          "osc": "noise",
+          "noiseColor": "pink",
+          "mixGain": 0.8,
+          "startDelayMs": 23,
+          "ampEnv": {
+            "attack": 0,
+            "decay": 190,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 1400,
+            "resonance": 0.35
+          },
+          "sendReverb": 0.248
+        }
+      ]
+    },
+    "42": {
+      "name": "dnb_hat_closed",
+      "oneShot": true,
+      "exclusiveGroup": 1,
+      "layers": [
+        {
+          "_about": "Noise between a highpass and a lowpass: a cymbal is a band, not everything above 8 kHz.",
+          "osc": "noise",
+          "noiseColor": "pink",
+          "mixGain": 1.0,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 36,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "highpass",
+            "cutoffHz": 2400,
+            "slope": 12
+          },
+          "filter2": {
+            "mode": "lowpass",
+            "cutoffHz": 9500
+          },
+          "modMatrix": [
+            {
+              "src": "Velocity",
+              "dst": "FilterCutoff",
+              "amount": 0.2
+            }
+          ]
+        },
+        {
+          "_about": "Metal cluster for the inharmonic clank, in its own range.",
+          "osc": "metal",
+          "pitchNote": 74,
+          "mixGain": 0.55,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 25,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 4200,
+            "resonance": 0.2
+          }
+        }
+      ]
+    },
+    "44": {
+      "name": "dnb_hat_pedal",
+      "oneShot": true,
+      "exclusiveGroup": 1,
+      "layers": [
+        {
+          "_about": "Noise between a highpass and a lowpass: a cymbal is a band, not everything above 8 kHz.",
+          "osc": "noise",
+          "noiseColor": "pink",
+          "mixGain": 0.9,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 64,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "highpass",
+            "cutoffHz": 2300,
+            "slope": 12
+          },
+          "filter2": {
+            "mode": "lowpass",
+            "cutoffHz": 9000
+          },
+          "modMatrix": [
+            {
+              "src": "Velocity",
+              "dst": "FilterCutoff",
+              "amount": 0.2
+            }
+          ]
+        },
+        {
+          "_about": "Metal cluster for the inharmonic clank, in its own range.",
+          "osc": "metal",
+          "pitchNote": 72,
+          "mixGain": 0.45,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 44,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 4200,
+            "resonance": 0.2
+          }
+        }
+      ]
+    },
+    "46": {
+      "name": "dnb_hat_open",
+      "oneShot": true,
+      "exclusiveGroup": 1,
+      "layers": [
+        {
+          "_about": "Noise between a highpass and a lowpass: a cymbal is a band, not everything above 8 kHz.",
+          "osc": "noise",
+          "noiseColor": "pink",
+          "mixGain": 0.95,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 340,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "highpass",
+            "cutoffHz": 2400,
+            "slope": 12
+          },
+          "filter2": {
+            "mode": "lowpass",
+            "cutoffHz": 9500
+          },
+          "modMatrix": [
+            {
+              "src": "Velocity",
+              "dst": "FilterCutoff",
+              "amount": 0.2
+            }
+          ],
+          "sendReverb": 0.165
+        },
+        {
+          "_about": "Metal cluster for the inharmonic clank, in its own range.",
+          "osc": "metal",
+          "pitchNote": 74,
+          "mixGain": 0.5,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 237,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 4200,
+            "resonance": 0.2
+          }
+        }
+      ]
+    },
+    "51": {
+      "name": "dnb_ride",
+      "oneShot": true,
+      "layers": [
+        {
+          "_about": "Noise between a highpass and a lowpass: a cymbal is a band, not everything above 8 kHz.",
+          "osc": "noise",
+          "noiseColor": "pink",
+          "mixGain": 0.85,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 900,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "highpass",
+            "cutoffHz": 2200,
+            "slope": 12
+          },
+          "filter2": {
+            "mode": "lowpass",
+            "cutoffHz": 9000
+          },
+          "modMatrix": [
+            {
+              "src": "Velocity",
+              "dst": "FilterCutoff",
+              "amount": 0.2
+            }
+          ],
+          "sendReverb": 0.248
+        },
+        {
+          "_about": "Metal cluster for the inharmonic clank, in its own range.",
+          "osc": "metal",
+          "pitchNote": 80,
+          "mixGain": 0.5,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 0,
+            "decay": 630,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 4200,
+            "resonance": 0.2
+          }
+        },
+        {
+          "_about": "Stick attack.",
+          "osc": "noise",
+          "noiseColor": "white",
+          "mixGain": 0.22,
+          "ampEnv": {
+            "attack": 0,
+            "decay": 14,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "bandpass",
+            "cutoffHz": 4200,
+            "resonance": 0.35
+          }
+        }
+      ]
+    },
+    "75": {
+      "name": "dnb_shaker",
+      "oneShot": true,
+      "layers": [
+        {
+          "osc": "noise",
+          "noiseColor": "pink",
+          "mixGain": 1.0,
+          "velCurve": "soft",
+          "ampEnv": {
+            "attack": 2,
+            "decay": 46,
+            "sustain": 0,
+            "release": 0,
+            "decayCurve": "exp"
+          },
+          "filter": {
+            "mode": "highpass",
+            "cutoffHz": 3200,
+            "slope": 12
+          },
+          "filter2": {
+            "mode": "lowpass",
+            "cutoffHz": 9000
+          }
+        }
+      ]
+    }
+  }
+}

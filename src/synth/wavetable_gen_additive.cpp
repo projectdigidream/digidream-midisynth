@@ -116,6 +116,10 @@ namespace wavetable_detail {
 bool gen_pulse(const JsonValue*, int, WaveTable&, std::string*);
 bool gen_drawbar(const JsonValue*, int, WaveTable&, std::string*);
 bool gen_waveshaper(const JsonValue*, int, WaveTable&, std::string*);
+bool gen_chebyshev(const JsonValue*, int, WaveTable&, std::string*);
+bool gen_harmonics(const JsonValue*, int, WaveTable&, std::string*);
+bool gen_hardsync(const JsonValue*, int, WaveTable&, std::string*);
+bool gen_custom(const JsonValue*, int, WaveTable&, std::string*);
 bool gen_fm2op(const JsonValue*, int, WaveTable&, std::string*);
 }  // namespace wavetable_detail
 
@@ -127,6 +131,10 @@ const std::map<std::string, GeneratorFn>& registry() {
         {"pulse", &wavetable_detail::gen_pulse},
         {"drawbar", &wavetable_detail::gen_drawbar},
         {"waveshaper", &wavetable_detail::gen_waveshaper},
+        {"chebyshev", &wavetable_detail::gen_chebyshev},
+        {"harmonics", &wavetable_detail::gen_harmonics},
+        {"hardsync", &wavetable_detail::gen_hardsync},
+        {"custom", &wavetable_detail::gen_custom},
         {"fm2op", &wavetable_detail::gen_fm2op},
     };
     return reg;

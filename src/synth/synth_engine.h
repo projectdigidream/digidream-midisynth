@@ -11,6 +11,10 @@
 #include "effects/chorus.h"
 #include "effects/reverb.h"
 #include "limiter.h"
+#include "master_chain.h"
+#include "channel_eq.h"
+#include "sidechain.h"
+#include "effects/delay_fx.h"
 #include "patch_bank.h"
 #include "voice_pool.h"
 
@@ -33,6 +37,13 @@ struct EngineCommand {
         AllSoundOffBank,  // d1=bank: fast-release every voice in the bank
         SetOutgoingBank,  // d1=bank or 0xFF: lower steal protection (crossfade)
         Duck,             // v=target Q16, v2=ramp blocks (dialogue/SFX priority)
+        MasterParam,      // d1=MasterParamId, v=value (see master_chain.h)
+        PolyAftertouch,   // slot, d1=note, d2=pressure
+        TempoBpm,         // v=Q16 BPM (sequencer feeds tempo-synced LFOs)
+        TuningCent,       // d1=pitch class 0..11, v=Q16 cents (microtuning)
+        DelayConfig,      // d1=param(0 timeMs,1 feedback,2 wet,3 pingPong,4 syncBeats), v=Q16
+        SidechainConfig,  // d1=param(0 source,1 note,2 targets,3 depth,4 atk,5 hold,6 rel), v=Q16
+        ChannelEqParam,   // slot, d1=param(0 lowDb,1 midDb,2 midHz,3 highDb), v=Q16
     };
 
     u64 when = 0;  // absolute engine sample position; <= now applies immediately
@@ -67,6 +78,10 @@ class SynthEngine {
     int active_notes(int slot, u8* out, int max) const noexcept;
 
     OutputStage& output() noexcept { return out_stage_; }
+    // Mastering chain (bypassed by default). Meters accumulate on both paths;
+    // take_master_meters() is a diagnostics read like pool_diag().
+    const MasterChain& master() const noexcept { return master_; }
+    MasterMeters take_master_meters() noexcept { return master_.take_meters(); }
 
     // Authoring hot-swap prep: fast-release voices holding pointers into a
     // patch about to be replaced. Single-threaded contexts only (offline /
@@ -90,9 +105,14 @@ class SynthEngine {
 
     Reverb reverb_;
     Chorus chorus_;
+    DelayFx delay_fx_;
     ReverbParams reverb_params_;
     ChorusParams chorus_params_;
+    DelayParams delay_params_;
+    gain_t tempo_bpm_q16_ = 120 << GAIN_SHIFT;
+    i32 tuning_cents_q16_[12] = {};
     OutputStage out_stage_;
+    MasterChain master_;
 
     u64 sample_time_ = 0;
     u8 outgoing_bank_ = 0xFF;
@@ -101,6 +121,18 @@ class SynthEngine {
     i64 dry_l_[CONTROL_BLOCK], dry_r_[CONTROL_BLOCK];
     i64 rev_l_[CONTROL_BLOCK], rev_r_[CONTROL_BLOCK];
     i64 cho_l_[CONTROL_BLOCK], cho_r_[CONTROL_BLOCK];
+    i64 del_l_[CONTROL_BLOCK], del_r_[CONTROL_BLOCK];
+    // Per-channel dry lanes (mixer strips): voices write into their slot's
+    // lane; active lanes run the channel EQ, then sum into dry. Integer
+    // addition is exactly associative, so with every EQ flat this is
+    // byte-identical to the old single-bus path.
+    i64 chan_l_[NUM_CHANNEL_SLOTS][CONTROL_BLOCK] = {};
+    i64 chan_r_[NUM_CHANNEL_SLOTS][CONTROL_BLOCK] = {};
+    bool chan_dirty_[NUM_CHANNEL_SLOTS] = {};
+    ChannelEq chan_eq_[NUM_CHANNEL_SLOTS];
+    Sidechain sidechain_;
+    SidechainParams sidechain_params_;
+    i32 mst_l_[CONTROL_BLOCK], mst_r_[CONTROL_BLOCK];  // mastering scratch (Q8.24)
 };
 
 }  // namespace msynth

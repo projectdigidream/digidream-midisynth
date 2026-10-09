@@ -1,3 +1,5 @@
 build/
 tool/dist/
 node_modules/
+dist-web/
+dist-web.tar.gz

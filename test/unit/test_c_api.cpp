@@ -10,6 +10,7 @@
 #include "output/audio_output_offline.h"
 #include "smf_builder.h"
 #include "synth/patch_loader.h"
+#include "midi/smf_parser.h"
 
 using namespace msynth;
 using testfw::TrackBuilder;
@@ -135,5 +136,98 @@ TEST(c_api_beat_callback_fires) {
     i16 buf[512 * 2];
     for (int i = 0; i < 100; ++i) msynth_render(s, buf, 512);  // ~1.07s = 2+ beats
     CHECK(cb_ctx.count >= 2);
+    msynth_destroy(s);
+}
+
+TEST(c_api_queue_track_switches_at_loop_end_and_cancel) {
+    struct Ctx { int switches = 0; } cb_ctx;
+    msynth_ctx* s = msynth_create();
+    char report[512];
+    // Piece A: 1 bar of note 60 looping; piece B: note 72.
+    TrackBuilder ta, tb;
+    ta.tempo(0, 500000).note_on(0, 0, 60, 100).note_off(1920, 0, 60).end();
+    tb.tempo(0, 500000).note_on(0, 0, 72, 100).note_off(1920, 0, 72).end();
+    auto a = build_smf(0, 480, {ta}), b = build_smf(0, 480, {tb});
+    CHECK_EQ(msynth_load_song(s, a.data(), a.size(), report, sizeof(report)), 0);
+    msynth_set_loop(s, 1);
+    msynth_set_piece_callback(s, [](void* u) { ++static_cast<Ctx*>(u)->switches; }, &cb_ctx);
+    msynth_play(s);
+    i16 buf[512 * 2];
+    for (int i = 0; i < 10; ++i) msynth_render(s, buf, 512);
+    // Queue, cancel: nothing happens.
+    CHECK_EQ(msynth_queue_track(s, b.data(), b.size(), 0, 0, report, sizeof(report)), 0);
+    CHECK_EQ(msynth_queued(s), 1);
+    msynth_cancel_queued(s);
+    CHECK_EQ(msynth_queued(s), 0);
+    // Queue for real at loop end (2.0s); countdown must be positive and shrink.
+    CHECK_EQ(msynth_queue_track(s, b.data(), b.size(), 0, 0, report, sizeof(report)), 0);
+    const uint32_t ms1 = msynth_ms_to_boundary(s);
+    CHECK(ms1 > 0 && ms1 < 2000);
+    for (int i = 0; i < 20; ++i) msynth_render(s, buf, 512);
+    CHECK(msynth_ms_to_boundary(s) < ms1);
+    CHECK_EQ(cb_ctx.switches, 0);
+    for (int i = 0; i < 200; ++i) msynth_render(s, buf, 512);  // past 2.0s
+    CHECK_EQ(cb_ctx.switches, 1);
+    CHECK_EQ(msynth_queued(s), 0);
+    CHECK(msynth_playing(s));
+    // Garbage cannot be queued; the current piece keeps playing.
+    const u8 junk[] = "nope";
+    CHECK(msynth_queue_track(s, junk, sizeof(junk), 0, 0, report, sizeof(report)) != 0);
+    CHECK(msynth_playing(s));
+    msynth_destroy(s);
+}
+
+TEST(c_api_replace_song_and_export_smf) {
+    msynth_ctx* s = msynth_create();
+    char report[512];
+    auto smf = two_note_song();
+    CHECK_EQ(msynth_load_song(s, smf.data(), smf.size(), report, sizeof(report)), 0);
+    msynth_play(s);
+    i16 buf[512 * 2];
+    for (int i = 0; i < 20; ++i) msynth_render(s, buf, 512);
+    const uint32_t t_before = msynth_time_ms(s);
+    // Live edit: replacing with the same song keeps the position and playback.
+    CHECK_EQ(msynth_replace_song(s, smf.data(), smf.size(), report, sizeof(report)), 0);
+    CHECK_EQ(msynth_time_ms(s), t_before);
+    CHECK(msynth_playing(s));
+    // Export: size query, then bytes; the result re-parses to the same events.
+    const size_t need = msynth_export_smf(s, nullptr, 0);
+    CHECK(need > 14);
+    std::vector<uint8_t> out(need);
+    CHECK_EQ(msynth_export_smf(s, out.data(), out.size()), need);
+    CHECK_EQ(msynth_export_smf(s, out.data(), 4), 0);  // too small
+    ParsedSong x, y;
+    CHECK(smf_parse(smf.data(), smf.size(), x).ok);
+    CHECK(smf_parse(out.data(), out.size(), y).ok);
+    CHECK_EQ(x.events.size(), y.events.size());
+    CHECK_EQ(x.end_sample, y.end_sample);
+    msynth_destroy(s);
+}
+
+TEST(c_api_master_param_json_and_meters) {
+    msynth_ctx* s = msynth_create();
+    char report[512];
+    auto smf = two_note_song();
+    CHECK_EQ(msynth_load_song(s, smf.data(), smf.size(), report, sizeof(report)), 0);
+    msynth_play(s);
+    i16 buf[512 * 2];
+    // Bypass render: meters still fill.
+    for (int i = 0; i < 10; ++i) msynth_render(s, buf, 512);
+    msynth_master_meters m;
+    msynth_take_master_meters(s, &m);
+    CHECK_EQ(m.samples, 5120);
+    CHECK(m.peak_l > 0);
+    CHECK_EQ(m.comp_gr_q16, 65536);
+    // Enable via JSON, then tweak one parameter by id.
+    static const char* kMaster = R"({"master":{"enabled":true,"comp":{"thresholdDb":-40,"ratio":8,"kneeDb":0}}})";
+    CHECK_EQ(msynth_load_master_json(s, kMaster, std::strlen(kMaster), report, sizeof(report)), 0);
+    msynth_master_param(s, 18 /* GainDb */, -(3 << 16));
+    msynth_master_param(s, 99, 0);  // unknown id: ignored, no crash
+    for (int i = 0; i < 40; ++i) msynth_render(s, buf, 512);
+    msynth_take_master_meters(s, &m);
+    CHECK(m.comp_gr_q16 < 65536);  // heavy compression engaged
+    CHECK(m.lim_gain_q16 <= 65536);
+    CHECK_EQ(msynth_load_master_json(s, "{{", 2, report, sizeof(report)), -1);
+    CHECK(report[0] != 0);
     msynth_destroy(s);
 }

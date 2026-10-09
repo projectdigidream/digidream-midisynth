@@ -237,3 +237,195 @@ TEST(loader_wavetables_deduped_across_patches) {
     load_from(json, cache, b);
     CHECK(a.layers[0].wavetable.get() == b.layers[0].wavetable.get());
 }
+
+TEST(loader_filter_slope_drive_notch) {
+    WaveTableCache cache;
+    Patch p;
+    LoadResult r = load_from(R"({"name":"x","layers":[{
+        "filter": {"mode":"notch","cutoffHz":800,"resonance":0.2,"slope":24,"drive":2.5}}]})", cache, p);
+    CHECK(r.ok);
+    CHECK(p.layers[0].filter_mode == FilterMode::Notch);
+    CHECK(p.layers[0].filter_24db);
+    CHECK_EQ(p.layers[0].filter_drive_q16, (5 * GAIN_ONE) / 2);
+    // Defaults: 12 dB, drive 1 (exact no-op); bad values warn + clamp.
+    Patch q;
+    LoadResult r2 = load_from(R"({"name":"y","layers":[{"filter": {"mode":"lowpass","slope":18,"drive":40}}]})", cache, q);
+    CHECK(r2.ok);
+    CHECK(!q.layers[0].filter_24db);
+    CHECK_EQ(q.layers[0].filter_drive_q16, 8 * GAIN_ONE);
+    bool warned_slope = false, warned_drive = false;
+    for (const auto& w : r2.warnings) {
+        if (w.find("slope") != std::string::npos) warned_slope = true;
+        if (w.find("drive") != std::string::npos) warned_drive = true;
+    }
+    CHECK(warned_slope);
+    CHECK(warned_drive);
+    Patch z;
+    CHECK(load_from(R"({"name":"z","layers":[{"filter": {"mode":"lowpass"}}]})", cache, z).ok);
+    CHECK_EQ(z.layers[0].filter_drive_q16, GAIN_ONE);
+}
+
+TEST(loader_start_delay_ms) {
+    WaveTableCache cache;
+    Patch p;
+    LoadResult r = load_from(R"({"name":"x","layers":[{"startDelayMs": 40}, {"startDelayMs": 3000}]})", cache, p);
+    CHECK(r.ok);
+    CHECK_EQ(p.layers[0].start_delay_blocks, 30);   // 40 ms * 750 / 1000
+    CHECK_EQ(p.layers[1].start_delay_blocks, 1500); // clamped to 2000 ms
+    CHECK(!r.warnings.empty());
+    Patch q;
+    CHECK(load_from(R"({"name":"y","layers":[{}]})", cache, q).ok);
+    CHECK_EQ(q.layers[0].start_delay_blocks, 0);
+}
+
+TEST(loader_synthesis_batch_fields) {
+    WaveTableCache cache;
+    Patch p;
+    LoadResult r = load_from(R"({"name":"x","layers":[{
+        "postDrive": 2.5,
+        "unison": {"voices": 5, "detuneCents": 12, "spread": 0.8},
+        "ring": {"ratio": 1.5, "amount": 0.7},
+        "filter": {"mode":"lowpass","cutoffHz":900},
+        "filter2": {"mode":"highpass","cutoffHz":150,"resonance":0.2},
+        "filterRouting": "parallel",
+        "releaseVel": 0.5,
+        "rrGroup": 1,
+        "ampEnv": {"delay": 20, "attack": 5, "hold": 40, "decay": 100, "sustain": 0.5, "loop": true},
+        "lfos": [{"sync":"1/4"},{"sync":"1/8T"},{"rateHz":3},{"rateHz":7}],
+        "modMatrix": [{"src":"LFO3","dst":"FilterDrive","amount":0.5},
+                      {"src":"PolyAftertouch","dst":"Pitch","amount":0.01}]
+      }, {"rrGroup": 1}]})", cache, p);
+    CHECK(r.ok);
+    const LayerDef& l = p.layers[0];
+    CHECK_EQ(l.post_drive_q16, (5 * GAIN_ONE) / 2);
+    CHECK_EQ(l.unison_voices, 5);
+    CHECK_EQ(l.unison_detune_cents_q16, 12 << GAIN_SHIFT);
+    CHECK_EQ(l.ring_ratio_q16, (3 * GAIN_ONE) / 2);
+    CHECK(l.filter2_mode == FilterMode::Highpass);
+    CHECK(l.filter_parallel);
+    CHECK_EQ(l.release_vel_amount_q16, GAIN_ONE / 2);
+    CHECK_EQ(l.rr_group, 1);
+    CHECK_EQ(l.rr_index, 0);
+    CHECK_EQ(l.rr_size, 2);
+    CHECK_EQ(p.layers[1].rr_index, 1);
+    CHECK_EQ(p.layers[1].rr_size, 2);
+    CHECK_EQ(l.amp_env.del.duration_blocks, 15u);   // 20 ms
+    CHECK_EQ(l.amp_env.hold.duration_blocks, 30u);  // 40 ms
+    CHECK(l.amp_env.loop);
+    CHECK_EQ(l.lfo_count, 4);
+    CHECK_EQ(l.lfos[0].sync_beats_q16, GAIN_ONE);            // 1/4 = 1 beat
+    CHECK_EQ(l.lfos[1].sync_beats_q16, (GAIN_ONE / 2) * 2 / 3);  // 1/8T
+    CHECK(l.routings[0].src == ModSource::LFO3);
+    CHECK(l.routings[0].dst == ModDest::FilterDrive);
+    CHECK(l.routings[1].src == ModSource::PolyAftertouch);
+}
+
+TEST(loader_comb_and_formant_modes) {
+    WaveTableCache cache;
+    Patch p;
+    LoadResult r = load_from(R"({"name":"x","layers":[{
+        "filter":{"mode":"comb","cutoffHz":440,"resonance":0.9}}]})", cache, p);
+    CHECK(r.ok);
+    CHECK(p.layers[0].filter_mode == FilterMode::Comb);
+    Patch q;
+    LoadResult r2 = load_from(R"({"name":"y","layers":[{
+        "filter":{"mode":"formant","vowel":"o","endVowel":"i"},
+        "filter2":{"mode":"lowpass"}}]})", cache, q);
+    CHECK(r2.ok);
+    CHECK(q.layers[0].filter_mode == FilterMode::Formant);
+    CHECK(q.layers[0].filter2_mode == FilterMode::Bypass);  // formant claims the stages
+    CHECK(!r2.warnings.empty());
+    CHECK(q.layers[0].formant_idx_q16[0][0] != q.layers[0].formant_idx_q16[1][0]);  // o != i
+    CHECK_EQ(q.layers[0].resonance_q16, (85 * GAIN_ONE) / 100);  // formant default Q
+    Patch z;
+    LoadResult r3 = load_from(R"({"name":"z","layers":[{
+        "filter":{"mode":"lowpass"},"filter2":{"mode":"comb"}}]})", cache, z);
+    CHECK(r3.ok);
+    CHECK(z.layers[0].filter2_mode == FilterMode::Bypass);
+    CHECK(!r3.warnings.empty());
+}
+
+TEST(loader_metal_static_filter2_and_sends) {
+    WaveTableCache cache;
+    Patch p;
+    LoadResult r = load_from(R"({"name":"cym","layers":[{
+        "osc": "metal",
+        "filter": {"mode":"bandpass","cutoffHz":6000,"resonance":0.4},
+        "filter2": {"mode":"highpass","cutoffHz":300,"static":true},
+        "sendReverb": 0.8, "sendDelay": 0,
+        "modMatrix": [{"src":"Velocity","dst":"PostDrive","amount":0.5}]}]})", cache, p);
+    CHECK(r.ok);
+    const LayerDef& l = p.layers[0];
+    CHECK(l.osc == OscType::Metal);
+    CHECK(l.filter2_static);
+    CHECK_EQ(l.send_reverb_q16, (4 * GAIN_ONE) / 5);
+    CHECK_EQ(l.send_chorus_q16, -1);   // inherit
+    CHECK_EQ(l.send_delay_q16, 0);     // explicit dry
+    CHECK(l.routings[0].dst == ModDest::PostDrive);
+    Patch q;
+    CHECK(load_from(R"({"name":"x","layers":[{"filter2":{"mode":"highpass"}}]})", cache, q).ok);
+    CHECK(!q.layers[0].filter2_static);  // default: follows modulation
+}
+
+TEST(loader_env_rate_table_and_key_scale) {
+    WaveTableCache cache;
+    Patch p;
+    LoadResult r = load_from(R"({"name":"x","layers":[{
+        "ampEnv": {"attackRate": 99, "decayRate": 50, "releaseRate": 0,
+                    "sustain": 0.5, "keyScaleRate": 0.7}}]})", cache, p);
+    CHECK(r.ok);
+    const EnvParams& e = p.layers[0].amp_env;
+    // Anchor: t_ms = 40000 * 2^(-R/6.5). R=99 -> ~1 ms -> 0 blocks (floor);
+    // R=50 -> ~187 ms -> ~140 blocks; R=0 -> 40 s -> 30000 blocks.
+    CHECK(e.att.duration_blocks <= 1);
+    CHECK_NEAR(e.dec.duration_blocks, 140, 6);
+    CHECK_NEAR(e.rel.duration_blocks, 30000, 10);
+    CHECK_EQ(e.key_scale_rate_q16, (7 * GAIN_ONE) / 10);
+    // Explicit ms wins over a rate for the same stage; rates are monotone.
+    Patch q;
+    CHECK(load_from(R"({"name":"y","layers":[{
+        "ampEnv": {"decay": 100, "decayRate": 0}}]})", cache, q).ok);
+    CHECK_EQ(q.layers[0].amp_env.dec.duration_blocks, 75u);  // 100 ms
+    Patch m;
+    CHECK(load_from(R"({"name":"z","layers":[{
+        "ampEnv": {"attackRate": 30, "decayRate": 60}}]})", cache, m).ok);
+    CHECK(m.layers[0].amp_env.att.duration_blocks > m.layers[0].amp_env.dec.duration_blocks);
+}
+
+TEST(sync_spec_triplets_and_dots) {
+    LoadResult r;
+    // A whole note is 4 beats; N/D of it.
+    CHECK_EQ(parse_sync_beats("1/4", r, "t"), GAIN_ONE);
+    CHECK_EQ(parse_sync_beats("1/8", r, "t"), GAIN_ONE / 2);
+    CHECK_EQ(parse_sync_beats("1/1", r, "t"), 4 * GAIN_ONE);
+    // Dotted = x3/2, triplet = x2/3. Dotted 1/8 is the DnB echo.
+    CHECK_EQ(parse_sync_beats("1/8.", r, "t"), (GAIN_ONE * 3) / 4);
+    CHECK_EQ(parse_sync_beats("1/8T", r, "t"), GAIN_ONE / 3);
+    CHECK(r.warnings.empty());
+    // Junk warns and disables sync rather than guessing.
+    CHECK_EQ(parse_sync_beats("banana", r, "t"), 0);
+    CHECK_EQ(parse_sync_beats("", r, "t"), 0);
+    CHECK(!r.warnings.empty());
+}
+
+TEST(loader_reads_fm_noise_colour_and_phase_spread) {
+    WaveTableCache cache;
+    Patch p;
+    LoadResult r = load_from(R"({"name":"x","layers":[
+        {"osc":"noise","noiseColor":"pink"},
+        {"ring":{"mode":"fm","ratio":3,"index":4},
+         "unison":{"voices":3,"phaseSpread":0.5},
+         "lfos":[{"shape":"sine","rateHz":1,"retrigger":false}]}]})", cache, p);
+    CHECK(r.ok);
+    CHECK(p.layers[0].noise_color == NoiseColor::Pink);
+    CHECK(p.layers[1].ring_is_fm);
+    CHECK_EQ(p.layers[1].ring_amount_q16, 4 * GAIN_ONE);
+    CHECK_EQ(p.layers[1].ring_ratio_q16, 3 * GAIN_ONE);
+    CHECK_EQ(p.layers[1].unison_phase_spread_q16, GAIN_ONE / 2);
+    CHECK(!p.layers[1].lfos[0].retrigger);
+    // Defaults stay where the goldens expect them.
+    Patch q;
+    CHECK(load_from(R"({"name":"y","layers":[{"osc":"noise"}]})", cache, q).ok);
+    CHECK(q.layers[0].noise_color == NoiseColor::White);
+    CHECK_EQ(q.layers[0].unison_phase_spread_q16, 0);
+}

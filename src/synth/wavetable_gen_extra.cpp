@@ -185,24 +185,56 @@ bool gen_drawbar(const JsonValue* params, int frames, WaveTable& out, std::strin
 }
 
 // ---------------------------------------------------------------------------
+// Input cycle for the shaper family, Q2.30 at sample n of GEN_N.
+inline i64 shaper_input(int kind /*0 sine, 1 triangle, 2 saw*/, const i32* sine, int n) {
+    switch (kind) {
+        case 1: {  // triangle: -1 at n=0, +1 at N/2, back to -1
+            const i64 q = (static_cast<i64>(n) * 4 * COEF_ONE) / GEN_N;
+            return q < 2 * COEF_ONE ? q - COEF_ONE : 3LL * COEF_ONE - q;
+        }
+        case 2:  // rising saw -1..1 (the DFT resynthesis band-limits it)
+            return (static_cast<i64>(n) * 2 * COEF_ONE) / GEN_N - COEF_ONE;
+        default:
+            return sine[n * 2];
+    }
+}
+
 bool gen_waveshaper(const JsonValue* params, int frames, WaveTable& out, std::string* err) {
-    enum class Shape { Soft, Hard, Fold };
+    enum class Shape { Soft, Hard, Fold, Crush, Stairs };
     Shape shape = Shape::Soft;
     i32 drive0 = GAIN_ONE, drive1 = 8 * GAIN_ONE;
+    i32 bias = 0;
+    int input = 0;
+    int levels = 6;   // crush: output amplitude levels per side
+    int steps = 16;   // stairs: phase sample-holds per cycle
     if (params) {
         const std::string s = params->get_str("shape", "soft");
         if (s == "soft") shape = Shape::Soft;
         else if (s == "hard") shape = Shape::Hard;
         else if (s == "fold") shape = Shape::Fold;
+        else if (s == "crush") shape = Shape::Crush;
+        else if (s == "stairs") shape = Shape::Stairs;
         else {
             if (err) *err = "unknown waveshaper shape '" + s + "'";
             return false;
         }
+        levels = static_cast<int>(clamp_i32(params->get_int("levels", 6), 2, 32));
+        steps = static_cast<int>(clamp_i32(params->get_int("steps", 16), 2, 64));
+        const std::string in = params->get_str("input", "sine");
+        if (in == "sine") input = 0;
+        else if (in == "triangle") input = 1;
+        else if (in == "saw") input = 2;
+        else {
+            if (err) *err = "unknown waveshaper input '" + in + "'";
+            return false;
+        }
         drive0 = params->get_q16("startDrive", drive0);
         drive1 = params->get_q16("endDrive", drive1);
+        bias = clamp_i32(params->get_q16("bias", 0), -GAIN_ONE, GAIN_ONE);
     }
     drive0 = clamp_i32(drive0, GAIN_ONE / 4, 64 * GAIN_ONE);
     drive1 = clamp_i32(drive1, GAIN_ONE / 4, 64 * GAIN_ONE);
+    const i64 bias_q30 = static_cast<i64>(bias) << (COEF_SHIFT - GAIN_SHIFT);
 
     const i32* sine = sine_table_4096();
     out.allocate(frames);
@@ -210,7 +242,12 @@ bool gen_waveshaper(const JsonValue* params, int frames, WaveTable& out, std::st
     for (int f = 0; f < frames; ++f) {
         const i32 drive = lerp_q16(drive0, drive1, frame_t_q16(f, frames));
         for (int n = 0; n < GEN_N; ++n) {
-            i64 x = asr(static_cast<i64>(sine[n * 2]) * drive, GAIN_SHIFT);  // Q30, +/-drive
+            // Stairs: sample-hold the phase before anything else (a digital
+            // "steppy" read of the input wave).
+            const int sn = shape == Shape::Stairs ? (n / (GEN_N / steps)) * (GEN_N / steps) : n;
+            // Bias shifts the operating point into the curve's asymmetric
+            // region: even harmonics appear (DC is removed afterwards).
+            i64 x = asr(shaper_input(input, sine, sn) * drive, GAIN_SHIFT) + bias_q30;  // Q30
             switch (shape) {
                 case Shape::Soft:
                     // y = 1.5x - 0.5x^3 inside +/-1, +/-1 outside.
@@ -231,6 +268,17 @@ bool gen_waveshaper(const JsonValue* params, int frames, WaveTable& out, std::st
                         else if (x < -COEF_ONE) x = -2LL * COEF_ONE - x;
                         else break;
                     }
+                    break;
+                case Shape::Crush: {
+                    // Hard clip, then quantize to `levels` amplitude steps
+                    // per side (bit-crusher transfer, heavy digital buzz).
+                    x = clamp_i32(x, -COEF_ONE, COEF_ONE);
+                    const i64 q = COEF_ONE / levels;
+                    x = (x >= 0 ? (x + q / 2) / q : -((-x + q / 2) / q)) * q;
+                    break;
+                }
+                case Shape::Stairs:
+                    x = clamp_i32(x, -COEF_ONE, COEF_ONE);  // held phase + clip
                     break;
             }
             wave[n] = x;
@@ -276,6 +324,213 @@ bool gen_fm2op(const JsonValue* params, int frames, WaveTable& out, std::string*
             const u32 pi = static_cast<u32>(asr(phase_q16, GAIN_SHIFT)) & 4095u;
             const u32 frac = static_cast<u32>(phase_q16 & 0xFFFF);
             wave[n] = lerp16(sine[pi], sine[(pi + 1) & 4095u], frac);
+        }
+        remove_dc(wave);
+        Spectrum spec;
+        analyze(wave, spec, MAX_ANALYSIS_H);
+        synthesize_frame(out, f, spec);
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Chebyshev waveshaping: sum of weights on T1..T8 applied to a driven cosine.
+// T_n(cos t) = cos(n t), so at drive 1.0 weight n IS harmonic n exactly; at
+// drive < 1 the polynomials only partially develop and the upper partials
+// fade nonlinearly -- the classic waveshaping-synthesis "index" control.
+// drive morphs startDrive -> endDrive across frames (weights optionally too).
+bool gen_chebyshev(const JsonValue* params, int frames, WaveTable& out, std::string* err) {
+    constexpr int NW = 8;
+    i32 w0[NW] = {GAIN_ONE, 0, 0, 0, 0, 0, 0, 0};
+    i32 w1[NW];
+    bool has_end = false;
+    i32 drive0 = GAIN_ONE, drive1 = GAIN_ONE;
+    auto read_weights = [&](const JsonValue* arr, i32* dst) {
+        for (int i = 0; i < NW; ++i)
+            dst[i] = clamp_i32(i < static_cast<int>(arr->arr.size()) ? arr->arr[i]->num_q16 : 0,
+                               -GAIN_ONE, GAIN_ONE);
+    };
+    if (params) {
+        const JsonValue* w = params->get("weights");
+        if (w && w->is_arr()) read_weights(w, w0);
+        else if (w) {
+            if (err) *err = "chebyshev weights must be an array";
+            return false;
+        }
+        const JsonValue* e = params->get("endWeights");
+        if (e && e->is_arr()) {
+            read_weights(e, w1);
+            has_end = true;
+        }
+        drive0 = clamp_i32(params->get_q16("startDrive", GAIN_ONE), 0, GAIN_ONE);
+        drive1 = clamp_i32(params->get_q16("endDrive", drive0), 0, GAIN_ONE);
+    }
+    if (!has_end)
+        for (int i = 0; i < NW; ++i) w1[i] = w0[i];
+    bool any = false;
+    for (int i = 0; i < NW; ++i) any = any || w0[i] != 0 || w1[i] != 0;
+    if (!any) w0[0] = w1[0] = GAIN_ONE;  // all-zero recipe: fall back to a sine
+
+    const i32* sine = sine_table_4096();
+    out.allocate(frames);
+    i64 wave[GEN_N];
+    for (int f = 0; f < frames; ++f) {
+        const i32 t = frame_t_q16(f, frames);
+        const i32 drive = lerp_q16(drive0, drive1, t);
+        i32 w[NW];
+        for (int i = 0; i < NW; ++i) w[i] = lerp_q16(w0[i], w1[i], t);
+        for (int n = 0; n < GEN_N; ++n) {
+            // x = drive * cos(theta), Q2.30; recurrence T_{k+1} = 2 x T_k - T_{k-1}.
+            const i64 x = asr(static_cast<i64>(sine[(n * 2 + 1024) & 4095]) * drive, GAIN_SHIFT);
+            i64 tkm1 = COEF_ONE;  // T_0
+            i64 tk = x;           // T_1
+            i64 acc = 0;          // Q46 (Q16 weight x Q30 value)
+            for (int k = 0; k < NW; ++k) {
+                if (w[k] != 0) acc += static_cast<i64>(w[k]) * tk;
+                const i64 tn = asr(2 * x * tk, COEF_SHIFT) - tkm1;
+                tkm1 = tk;
+                tk = tn;
+            }
+            wave[n] = asr(acc, GAIN_SHIFT);  // back to Q30
+        }
+        remove_dc(wave);
+        Spectrum spec;
+        analyze(wave, spec, MAX_ANALYSIS_H);
+        synthesize_frame(out, f, spec);
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Direct additive recipe: amplitudes for harmonics 1..64 (the general tool
+// the drawbar is a preset of). Spectrum-direct: no analysis pass needed.
+bool gen_harmonics(const JsonValue* params, int frames, WaveTable& out, std::string* err) {
+    constexpr int NH = 64;
+    i32 a0[NH] = {};
+    i32 a1[NH];
+    bool has_end = false;
+    a0[0] = GAIN_ONE;
+    auto read_amps = [&](const JsonValue* arr, i32* dst) {
+        for (int i = 0; i < NH; ++i)
+            dst[i] = clamp_i32(i < static_cast<int>(arr->arr.size()) ? arr->arr[i]->num_q16 : 0,
+                               0, GAIN_ONE);
+    };
+    if (params) {
+        const JsonValue* a = params->get("amps");
+        if (a && a->is_arr()) read_amps(a, a0);
+        else if (a) {
+            if (err) *err = "harmonics amps must be an array";
+            return false;
+        }
+        const JsonValue* e = params->get("endAmps");
+        if (e && e->is_arr()) {
+            read_amps(e, a1);
+            has_end = true;
+        }
+    }
+    if (!has_end)
+        for (int i = 0; i < NH; ++i) a1[i] = a0[i];
+    bool any = false;
+    for (int i = 0; i < NH; ++i) any = any || a0[i] != 0 || a1[i] != 0;
+    if (!any) a0[0] = a1[0] = GAIN_ONE;  // silence recipe -> sine
+
+    out.allocate(frames);
+    for (int f = 0; f < frames; ++f) {
+        Spectrum spec{};
+        spec.max_h = NH;
+        const i32 t = frame_t_q16(f, frames);
+        for (int i = 0; i < NH; ++i) spec.s[i + 1] = lerp_q16(a0[i], a1[i], t);
+        synthesize_frame(out, f, spec);
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Hard sync: a slave oscillator running at `ratio` x the fundamental, phase-
+// reset every master period. The reset discontinuity is what screams; the
+// DFT resynthesis keeps it band-limited. Ratio morphs across frames (the
+// classic sync sweep); fractional ratios are fine -- the cycle is periodic
+// at the master period by construction.
+bool gen_hardsync(const JsonValue* params, int frames, WaveTable& out, std::string* err) {
+    i32 ratio0 = GAIN_ONE, ratio1 = 3 * GAIN_ONE;
+    int slave = 0;  // 0 saw, 1 pulse
+    if (params) {
+        ratio0 = params->get_q16("startRatio", ratio0);
+        ratio1 = params->get_q16("endRatio", ratio1);
+        const std::string s = params->get_str("slave", "saw");
+        if (s == "saw") slave = 0;
+        else if (s == "pulse") slave = 1;
+        else {
+            if (err) *err = "unknown hardsync slave '" + s + "'";
+            return false;
+        }
+    }
+    ratio0 = clamp_i32(ratio0, GAIN_ONE, 16 * GAIN_ONE);
+    ratio1 = clamp_i32(ratio1, GAIN_ONE, 16 * GAIN_ONE);
+
+    out.allocate(frames);
+    i64 wave[GEN_N];
+    for (int f = 0; f < frames; ++f) {
+        const i32 ratio = lerp_q16(ratio0, ratio1, frame_t_q16(f, frames));
+        for (int n = 0; n < GEN_N; ++n) {
+            // Slave phase in Q16 cycles: frac(n/GEN_N * ratio).
+            const i64 ph = (static_cast<i64>(n) * ratio / GEN_N) & 0xFFFF;
+            wave[n] = slave == 0 ? (ph * 2 * COEF_ONE >> GAIN_SHIFT) - COEF_ONE
+                                 : (ph < GAIN_ONE / 2 ? COEF_ONE : -COEF_ONE);
+        }
+        remove_dc(wave);
+        Spectrum spec;
+        analyze(wave, spec, MAX_ANALYSIS_H);
+        synthesize_frame(out, f, spec);
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Custom single cycle: raw samples (up to 2048, -1..1) resampled to the
+// analysis cycle and band-limited like every nonlinear generator -- the
+// "draw it / import it" recipe. `endSamples` morphs across frames.
+bool gen_custom(const JsonValue* params, int frames, WaveTable& out, std::string* err) {
+    std::vector<i64> a, b;
+    auto read_samples = [&](const JsonValue* arr, std::vector<i64>& dst) {
+        dst.clear();
+        const size_t n = arr->arr.size() > 2048 ? 2048 : arr->arr.size();
+        dst.reserve(n);
+        for (size_t i = 0; i < n; ++i)
+            dst.push_back(asl(static_cast<i64>(clamp_i32(arr->arr[i]->num_q16, -GAIN_ONE, GAIN_ONE)),
+                              COEF_SHIFT - GAIN_SHIFT));  // Q16 -> Q30
+    };
+    if (params) {
+        const JsonValue* s = params->get("samples");
+        if (s && s->is_arr()) read_samples(s, a);
+        else if (s) {
+            if (err) *err = "custom samples must be an array";
+            return false;
+        }
+        const JsonValue* e = params->get("endSamples");
+        if (e && e->is_arr()) read_samples(e, b);
+    }
+    if (a.size() < 2) {
+        if (err) *err = "custom generator needs a samples array (2..2048 values)";
+        return false;
+    }
+    if (b.size() < 2) b = a;
+
+    // Linear resample a source cycle to GEN_N points.
+    auto at = [](const std::vector<i64>& src, int n) -> i64 {
+        const u64 pos = (static_cast<u64>(n) * src.size() << GAIN_SHIFT) / GEN_N;
+        const size_t i0 = static_cast<size_t>(pos >> GAIN_SHIFT) % src.size();
+        const size_t i1 = (i0 + 1) % src.size();
+        const i64 frac = static_cast<i64>(pos & 0xFFFF);
+        return src[i0] + asr((src[i1] - src[i0]) * frac, GAIN_SHIFT);
+    };
+    out.allocate(frames);
+    i64 wave[GEN_N];
+    for (int f = 0; f < frames; ++f) {
+        const i32 t = frame_t_q16(f, frames);
+        for (int n = 0; n < GEN_N; ++n) {
+            const i64 va = at(a, n), vb = at(b, n);
+            wave[n] = va + asr((vb - va) * t, GAIN_SHIFT);
         }
         remove_dc(wave);
         Spectrum spec;

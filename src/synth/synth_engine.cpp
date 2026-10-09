@@ -54,13 +54,48 @@ void SynthEngine::note_on(u8 slot, u8 note, u8 vel) noexcept {
     // starts (retrigger-with-overlap, plan §10).
     pool_.retrigger_same_note(slot, note);
 
+    // Round robin + glide bookkeeping (channel-scoped, deterministic).
+    const u32 rr = ch.rr_counter++;
+    const i32 target_cents = (static_cast<i32>(note) * 100) << GAIN_SHIFT;
+    const bool glide = ch.portamento && !ch.is_drum && ch.last_note_cents_q16 >= 0 &&
+                       ch.last_note_cents_q16 != target_cents && ch.portamento_blocks > 0;
+    const i32 glide_from = ch.last_note_cents_q16;
+    if (!ch.is_drum) ch.last_note_cents_q16 = target_cents;
+
     const u32 group = pool_.new_group_id();
     for (u8 li = 0; li < patch->layer_count; ++li) {
         const LayerDef& l = patch->layers[li];
         if (vel < l.vel_low || vel > l.vel_high) continue;
-        Voice* v = pool_.alloc(outgoing_bank_);
-        if (!v) break;  // fully shielded pool: drop rather than stutter
-        v->start(v->slot, slot, note, vel, group, li, patch, &l, ch);
+        if (l.rr_size > 1 && (rr % l.rr_size) != l.rr_index) continue;  // round robin
+        const int uni = l.unison_voices > 1 ? l.unison_voices : 1;
+        for (int u = 0; u < uni; ++u) {
+            Voice* v = pool_.alloc(outgoing_bank_);
+            if (!v) break;  // fully shielded pool: drop rather than stutter
+            v->start(v->slot, slot, note, vel, group, li, patch, &l, ch,
+                     sample_time_ / CONTROL_BLOCK, tempo_bpm_q16_);
+            if (uni > 1) {
+                // Symmetric spread: -1..+1 across the stack (centre stays put).
+                const i32 f_q16 = static_cast<i32>(
+                    ((static_cast<i64>(2 * u) - (uni - 1)) << GAIN_SHIFT) / (uni - 1));
+                v->unison_extra_cents_q16 = static_cast<i32>(
+                    asr(static_cast<i64>(l.unison_detune_cents_q16) * f_q16, GAIN_SHIFT));
+                v->unison_pan_q16 = static_cast<gain_t>(
+                    asr(static_cast<i64>(l.unison_spread_q16) * f_q16, GAIN_SHIFT));
+                // Start the stack's oscillators apart so it beats immediately
+                // instead of only once the detune has drifted them apart.
+                if (l.unison_phase_spread_q16 > 0)
+                    v->osc.phase = static_cast<u32>(
+                        (static_cast<u64>(0x9E3779B9u * static_cast<u32>(u + 1)) *
+                         static_cast<u32>(l.unison_phase_spread_q16)) >> GAIN_SHIFT);
+            }
+            if (glide && l.fixed_pitch_cents_q16 < 0) {
+                v->glide_offset_cents_q16 = glide_from - target_cents;
+                v->glide_step_cents_q16 = static_cast<i32>(
+                    v->glide_offset_cents_q16 / static_cast<i32>(ch.portamento_blocks));
+                if (v->glide_step_cents_q16 == 0)
+                    v->glide_step_cents_q16 = v->glide_offset_cents_q16 > 0 ? 1 : -1;
+            }
+        }
     }
     // Drum choke (closed hat cuts open hat) -- after allocation so the new
     // group survives its own choke group.
@@ -89,7 +124,12 @@ void SynthEngine::handle_cc(u8 slot, u8 cc, u8 val) noexcept {
         case 0: ch.bank = val; break;
         case 32: break;  // bank LSB: recognized, single-bank build
         case 1: ch.modwheel_q16 = (static_cast<i32>(val) << GAIN_SHIFT) / 127; break;
-        case 5: case 65: break;  // portamento: recognized and ignored (plan scope)
+        case 5:
+            // Portamento time: quadratic 0..127 -> 0..1000 ms, in blocks.
+            ch.portamento_blocks = static_cast<u32>(
+                (static_cast<i64>(val) * val * 1000 / 16129) * CONTROL_RATE / 1000);
+            break;
+        case 65: ch.portamento = val >= 64; break;
         case 6: handle_data_entry(ch, val); break;
         case 38: break;  // data entry LSB
         case 7: ch.volume = val; break;
@@ -105,6 +145,7 @@ void SynthEngine::handle_cc(u8 slot, u8 cc, u8 val) noexcept {
         case 74: ch.cutoff_offset_q16 = static_cast<i32>(asl(static_cast<i64>(val) - 64, GAIN_SHIFT)); break;
         case 91: ch.send_reverb = val; break;
         case 93: ch.send_chorus = val; break;
+        case 94: ch.send_delay = val; break;  // delay/echo send
         case 98: case 99: ch.nrpn_active = true; break;
         case 100: ch.rpn_lsb = val; ch.nrpn_active = false; break;
         case 101: ch.rpn_msb = val; ch.nrpn_active = false; break;
@@ -117,9 +158,52 @@ void SynthEngine::handle_cc(u8 slot, u8 cc, u8 val) noexcept {
 
 void SynthEngine::apply_command(const EngineCommand& c) noexcept {
     switch (c.type) {
-        case EngineCommand::Type::NoteOn: note_on(c.slot, c.d1, c.d2); break;
+        case EngineCommand::Type::NoteOn:
+            note_on(c.slot, c.d1, c.d2);
+            sidechain_.on_note(c.slot, c.d1);  // the kick pulls the pads down
+            break;
+        case EngineCommand::Type::SidechainConfig:
+            switch (c.d1) {
+                case 0: sidechain_params_.source = clamp_i32(c.v, -1, NUM_CHANNEL_SLOTS - 1); break;
+                case 1: sidechain_params_.note = clamp_i32(c.v, -1, 127); break;
+                case 2: sidechain_params_.targets = static_cast<u32>(c.v); break;
+                case 3: sidechain_params_.depth = clamp_gain01(c.v); break;
+                case 4: sidechain_params_.attack_ms_q16 = clamp_i32(c.v, 0, 500 << GAIN_SHIFT); break;
+                case 5: sidechain_params_.hold_ms_q16 = clamp_i32(c.v, 0, 500 << GAIN_SHIFT); break;
+                case 6: sidechain_params_.release_ms_q16 = clamp_i32(c.v, 0, 2000 << GAIN_SHIFT); break;
+                default: break;
+            }
+            sidechain_.set_params(sidechain_params_);
+            break;
         case EngineCommand::Type::NoteOff:
-            pool_.note_off_group(c.slot, c.d1, channels_[c.slot].sustain);
+            // d2 = release velocity (0 = "no information" -> neutral 64).
+            pool_.note_off_group(c.slot, c.d1, channels_[c.slot].sustain,
+                                 c.d2 ? c.d2 : 64);
+            break;
+        case EngineCommand::Type::PolyAftertouch:
+            pool_.poly_aftertouch(c.slot, c.d1,
+                                  (static_cast<i32>(c.d2) << GAIN_SHIFT) / 127);
+            break;
+        case EngineCommand::Type::TempoBpm:
+            tempo_bpm_q16_ = clamp_i32(c.v, 20 << GAIN_SHIFT, 400 << GAIN_SHIFT);
+            delay_fx_.set_tempo(tempo_bpm_q16_);  // a synced echo follows the song
+            break;
+        case EngineCommand::Type::TuningCent:
+            if (c.d1 < 12) tuning_cents_q16_[c.d1] = clamp_i32(c.v, -(200 << GAIN_SHIFT), 200 << GAIN_SHIFT);
+            break;
+        case EngineCommand::Type::ChannelEqParam:
+            if (c.slot < NUM_CHANNEL_SLOTS) chan_eq_[c.slot].set_param(c.d1, c.v);
+            break;
+        case EngineCommand::Type::DelayConfig:
+            switch (c.d1) {
+                case 0: delay_params_.time_ms_q16 = clamp_i32(c.v, GAIN_ONE, 640 << GAIN_SHIFT); break;
+                case 1: delay_params_.feedback_q16 = clamp_i32(c.v, 0, (GAIN_ONE * 9) / 10); break;
+                case 2: delay_params_.wet_gain = clamp_i32(c.v, 0, 2 * GAIN_ONE); break;
+                case 3: delay_params_.ping_pong = c.v != 0; break;
+                case 4: delay_params_.sync_beats_q16 = clamp_i32(c.v, 0, 64 << GAIN_SHIFT); break;
+                default: break;
+            }
+            delay_fx_.set_params(delay_params_);
             break;
         case EngineCommand::Type::CC: handle_cc(c.slot, c.d1, c.d2); break;
         case EngineCommand::Type::Program:
@@ -145,12 +229,18 @@ void SynthEngine::apply_command(const EngineCommand& c) noexcept {
             out_stage_.master_gain = clamp_i32(c.v, 0, 4 * GAIN_ONE);
             break;
         case EngineCommand::Type::DitherEnable: out_stage_.dither = c.d1 != 0; break;
+        case EngineCommand::Type::MasterParam:
+            if (c.d1 < static_cast<u8>(MasterParamId::COUNT))
+                master_.set_param(static_cast<MasterParamId>(c.d1), c.v);
+            break;
         case EngineCommand::Type::ReverbConfig:
             switch (c.d1) {
                 case 0: reverb_params_.room_size = clamp_gain01(c.v); break;
                 case 1: reverb_params_.damping = clamp_gain01(c.v); break;
                 case 2: reverb_params_.width = clamp_gain01(c.v); break;
                 case 3: reverb_params_.wet_gain = clamp_i32(c.v, 0, 2 * GAIN_ONE); break;
+                case 4: reverb_params_.pre_delay_ms_q16 = clamp_i32(c.v, 0, 200 << GAIN_SHIFT); break;
+                case 5: reverb_params_.high_pass_hz_q16 = clamp_i32(c.v, 0, 1000 << GAIN_SHIFT); break;
                 default: break;
             }
             reverb_.set_params(reverb_params_);
@@ -194,24 +284,76 @@ void SynthEngine::render_one_block(i16* out) noexcept {
         dry_l_[i] = dry_r_[i] = 0;
         rev_l_[i] = rev_r_[i] = 0;
         cho_l_[i] = cho_r_[i] = 0;
+        del_l_[i] = del_r_[i] = 0;
+    }
+    // Zero only the channel lanes that were written last block.
+    for (int s = 0; s < NUM_CHANNEL_SLOTS; ++s) {
+        if (!chan_dirty_[s]) continue;
+        chan_dirty_[s] = false;
+        for (int i = 0; i < CONTROL_BLOCK; ++i) chan_l_[s][i] = chan_r_[s][i] = 0;
     }
 
     for (int s = 0; s < NUM_CHANNEL_SLOTS; ++s) channels_[s].advance_fade_block();
     out_stage_.advance_duck_block();
 
-    const VoiceBuses buses{dry_l_, dry_r_, rev_l_, rev_r_, cho_l_, cho_r_};
-    for (Voice& v : pool_)
-        if (v.active) v.render_block(channels_[v.chan_slot], buses);
+    for (Voice& v : pool_) {
+        if (!v.active) continue;
+        const u8 s = v.chan_slot;
+        chan_dirty_[s] = true;
+        const VoiceBuses buses{chan_l_[s], chan_r_[s], rev_l_, rev_r_, cho_l_, cho_r_,
+                               del_l_, del_r_, tempo_bpm_q16_, tuning_cents_q16_};
+        v.render_block(channels_[s], buses);
+    }
+    // Channel strips: EQ active lanes, duck the sidechain targets, then fold
+    // every dirty lane into dry.
+    for (int s = 0; s < NUM_CHANNEL_SLOTS; ++s) {
+        if (!chan_dirty_[s]) continue;
+        if (chan_eq_[s].active()) chan_eq_[s].process_block(chan_l_[s], chan_r_[s], CONTROL_BLOCK);
+        if (sidechain_.ducks(s)) {
+            // Block-rate endpoints, per-sample ramp -- the house idiom, and
+            // two divisions a block instead of sixty-four.
+            gain_t g = sidechain_.gain_at(0);
+            const gain_t dg = (sidechain_.gain_at(CONTROL_BLOCK) - g) / CONTROL_BLOCK;
+            for (int i = 0; i < CONTROL_BLOCK; ++i, g += dg) {
+                chan_l_[s][i] = asr(chan_l_[s][i] * g, GAIN_SHIFT);
+                chan_r_[s][i] = asr(chan_r_[s][i] * g, GAIN_SHIFT);
+            }
+        }
+        for (int i = 0; i < CONTROL_BLOCK; ++i) {
+            dry_l_[i] += chan_l_[s][i];
+            dry_r_[i] += chan_r_[s][i];
+        }
+    }
+    sidechain_.advance(CONTROL_BLOCK);
     pool_.update_active_count();
     pool_diag_public_ = pool_.diag();
 
     // Send effects return into the dry accumulators, then master out.
     reverb_.process_block(rev_l_, rev_r_, dry_l_, dry_r_, CONTROL_BLOCK);
     chorus_.process_block(cho_l_, cho_r_, dry_l_, dry_r_, CONTROL_BLOCK);
+    delay_fx_.process_block(del_l_, del_r_, dry_l_, dry_r_, CONTROL_BLOCK);
 
-    for (int i = 0; i < CONTROL_BLOCK; ++i) {
-        out[2 * i] = out_stage_.convert(dry_l_[i]);
-        out[2 * i + 1] = out_stage_.convert(dry_r_[i]);
+    if (!master_.enabled()) {
+        // Bypass: byte-identical to the pre-mastering output path.
+        for (int i = 0; i < CONTROL_BLOCK; ++i) {
+            const i64 sl = out_stage_.pre_gain(dry_l_[i]);
+            const i64 sr = out_stage_.pre_gain(dry_r_[i]);
+            out[2 * i] = out_stage_.finish(sl, 0);
+            out[2 * i + 1] = out_stage_.finish(sr, 1);
+            master_.meter(sl, sr);
+        }
+    } else {
+        constexpr i64 LIM = static_cast<i64>(32) << SAMPLE_SHIFT;
+        for (int i = 0; i < CONTROL_BLOCK; ++i) {
+            mst_l_[i] = clamp_i32(out_stage_.pre_gain(dry_l_[i]), -LIM, LIM);
+            mst_r_[i] = clamp_i32(out_stage_.pre_gain(dry_r_[i]), -LIM, LIM);
+        }
+        master_.process_block(mst_l_, mst_r_, CONTROL_BLOCK);
+        for (int i = 0; i < CONTROL_BLOCK; ++i) {
+            out[2 * i] = out_stage_.finish(mst_l_[i], 0);
+            out[2 * i + 1] = out_stage_.finish(mst_r_[i], 1);
+            master_.meter(mst_l_[i], mst_r_[i]);
+        }
     }
     sample_time_ += CONTROL_BLOCK;
 }

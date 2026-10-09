@@ -25,8 +25,15 @@ struct ChannelState {
     gain_t aftertouch_q16 = 0;  // channel pressure -> [0, 1]
     u8 send_reverb = 40;  // CC91 (GM default)
     u8 send_chorus = 0;   // CC93
+    u8 send_delay = 0;    // CC94 (delay/echo send)
     i32 cutoff_offset_q16 = 0;   // CC74, cutoff-index space
     gain_t res_offset_q16 = 0;   // CC71
+
+    // Portamento (CC65 on/off, CC5 time) + glide anchor.
+    bool portamento = false;
+    u32 portamento_blocks = 0;      // glide length in control blocks
+    i32 last_note_cents_q16 = -1;   // most recent melodic note (glide source)
+    u32 rr_counter = 0;             // round-robin note-on counter
 
     // RPN/NRPN state machine (CC101/100/99/98 + CC6/38).
     u8 rpn_msb = 127, rpn_lsb = 127;
@@ -62,6 +69,8 @@ struct ChannelState {
     }
 
     void reset_controllers() noexcept {
+        portamento = false;
+        portamento_blocks = 0;
         // CC121 per GM: controllers reset, but not program/volume/pan/sends.
         bend_raw = 0;
         expression = 127;

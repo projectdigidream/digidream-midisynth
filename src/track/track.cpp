@@ -36,6 +36,7 @@ struct Reader {
         if (static_cast<size_t>(end - p) < n) { ok = false; return false; }
         return true;
     }
+    size_t remaining() const { return static_cast<size_t>(end - p); }
     u8 u8v() { if (!need(1)) return 0; return *p++; }
     u16 u16v() {
         if (!need(2)) return 0;
@@ -71,6 +72,7 @@ constexpr u32 TAG_SONG = 0x474E4F53u;  // "SONG"
 constexpr u32 TAG_BANK = 0x4B4E4142u;  // "BANK"
 constexpr u32 TAG_KIT = 0x2054494Bu;   // "KIT "
 constexpr u32 TAG_FX = 0x20205846u;    // "FX  "
+constexpr u32 TAG_MSTR = 0x5254534Du;  // "MSTR"
 constexpr u32 TAG_META = 0x4154454Du;  // "META"
 
 // ---- instrument usage scan (mirrors the tool's scanner) --------------------
@@ -355,7 +357,6 @@ LoadResult cut_song(const ParsedSong& src, u32 start_tick, u32 end_tick, ParsedS
         MidiEvent n = e;
         n.tick = e.tick - start_tick;
         n.track = 0;
-        n.seq = seq++;
         if (e.is_channel()) {
             const u8 ch = e.channel();
             if (e.kind() == 0x90) {
@@ -370,6 +371,7 @@ LoadResult cut_song(const ParsedSong& src, u32 start_tick, u32 end_tick, ParsedS
                 }
             }
         }
+        n.seq = seq++;  // dense: assigned only for events actually kept
         out.events.push_back(n);
     }
     (void)dropped_note_ons;
@@ -516,6 +518,14 @@ LoadResult bake_track(const u8* smf, size_t smf_len, const char* bank_json, size
             return rep;
         }
     }
+    if (opts.master_json) {
+        LoadResult mr = load_master_config(opts.master_json, opts.master_json_len, fx.master);
+        for (auto& w : mr.warnings) rep.warn("master: " + w);
+        if (!mr.ok) {
+            for (auto& e : mr.errors) rep.error("master: " + e);
+            return rep;
+        }
+    }
 
     return bake_payload_impl(song, shaken_bank, shaken_kit, fx, meta, opts.verify_seconds, out,
                              rep);
@@ -526,6 +536,7 @@ LoadResult bake_payload_impl(const ParsedSong& song, const std::string& shaken_b
                              const std::string& shaken_kit, const SongFxConfig& fx,
                              TrackMeta& meta, u32 verify_seconds, std::vector<u8>& out,
                              LoadResult rep) {
+    out.clear();  // callers may reuse a buffer (the WASM binding does)
     // Content hash: lets consumers know when two tracks share loaded content.
     {
         Sha256 ch;
@@ -590,7 +601,39 @@ LoadResult bake_payload_impl(const ParsedSong& song, const std::string& shaken_b
         w.i32v(fx.chorus.rate_hz_q16);
         w.i32v(fx.chorus.depth_ms_q16);
         w.i32v(fx.chorus.wet_gain);
+        // Appended in later versions (readers treat them as optional):
+        w.i32v(fx.delay.time_ms_q16);
+        w.i32v(fx.delay.feedback_q16);
+        w.i32v(fx.delay.wet_gain);
+        w.i32v(fx.delay.ping_pong ? 1 : 0);
+        for (int i = 0; i < 12; ++i) w.i32v(fx.tuning_cents_q16[i]);
+        for (int ch = 0; ch < 16; ++ch) {
+            w.i32v(fx.channel_eq[ch].low_db_q16);
+            w.i32v(fx.channel_eq[ch].mid_db_q16);
+            w.i32v(fx.channel_eq[ch].mid_hz_q16);
+            w.i32v(fx.channel_eq[ch].high_db_q16);
+        }
+        // Tempo-synced delay, reverb send conditioning, sidechain ducking.
+        w.i32v(fx.delay.sync_beats_q16);
+        w.i32v(fx.reverb.pre_delay_ms_q16);
+        w.i32v(fx.reverb.high_pass_hz_q16);
+        w.i32v(fx.sidechain.source);
+        w.i32v(fx.sidechain.note);
+        w.i32v(static_cast<i32>(fx.sidechain.targets));
+        w.i32v(fx.sidechain.depth);
+        w.i32v(fx.sidechain.attack_ms_q16);
+        w.i32v(fx.sidechain.hold_ms_q16);
+        w.i32v(fx.sidechain.release_ms_q16);
     });
+    if (fx.master.enabled) {
+        // Only when engaged: bypass tracks stay byte-identical to pre-MSTR
+        // bakes. Payload: count, then one i32 per MasterParamId (append-only).
+        section(TAG_MSTR, [&] {
+            const u32 n = static_cast<u32>(MasterParamId::COUNT);
+            w.u32v(n);
+            for (u32 i = 0; i < n; ++i) w.i32v(fx.master.get(static_cast<MasterParamId>(i)));
+        });
+    }
     section(TAG_META, [&] {
         w.str(meta.name);
         w.u32v(meta.duration_ms);
@@ -719,6 +762,51 @@ LoadResult load_track(const u8* data, size_t len, TrackData& out) {
         out.fx.chorus.depth_ms_q16 = fr.i32v();
         out.fx.chorus.wet_gain = fr.i32v();
         if (!fr.ok) rep.warn("fx section truncated, using defaults");
+        // Optional tail (delay + tuning) appended by newer bakers.
+        if (fr.ok && fr.remaining() >= 16 * 4) {
+            out.fx.delay.time_ms_q16 = fr.i32v();
+            out.fx.delay.feedback_q16 = fr.i32v();
+            out.fx.delay.wet_gain = fr.i32v();
+            out.fx.delay.ping_pong = fr.i32v() != 0;
+            for (int i = 0; i < 12; ++i) out.fx.tuning_cents_q16[i] = fr.i32v();
+            if (fr.remaining() >= 16 * 4 * 4) {
+                for (int ch = 0; ch < 16; ++ch) {
+                    out.fx.channel_eq[ch].low_db_q16 = fr.i32v();
+                    out.fx.channel_eq[ch].mid_db_q16 = fr.i32v();
+                    out.fx.channel_eq[ch].mid_hz_q16 = fr.i32v();
+                    out.fx.channel_eq[ch].high_db_q16 = fr.i32v();
+                }
+                if (fr.remaining() >= 10 * 4) {
+                    out.fx.delay.sync_beats_q16 = fr.i32v();
+                    out.fx.reverb.pre_delay_ms_q16 = fr.i32v();
+                    out.fx.reverb.high_pass_hz_q16 = fr.i32v();
+                    out.fx.sidechain.source = fr.i32v();
+                    out.fx.sidechain.note = fr.i32v();
+                    out.fx.sidechain.targets = static_cast<u32>(fr.i32v());
+                    out.fx.sidechain.depth = fr.i32v();
+                    out.fx.sidechain.attack_ms_q16 = fr.i32v();
+                    out.fx.sidechain.hold_ms_q16 = fr.i32v();
+                    out.fx.sidechain.release_ms_q16 = fr.i32v();
+                }
+            }
+        }
+    }
+    out.fx.master = MasterParams{};
+    if (const Sec* ms = find(TAG_MSTR)) {
+        Reader mr = sec_reader(ms);
+        const u32 n = mr.u32v();
+        if (n > 256) {
+            rep.error("bad master section");
+            return rep;
+        }
+        MasterParams m;
+        for (u32 i = 0; i < n && mr.ok; ++i) {
+            const i32 v = mr.i32v();
+            if (i < static_cast<u32>(MasterParamId::COUNT)) m.set(static_cast<MasterParamId>(i), v);
+            // newer writers may append ids we don't know: ignored
+        }
+        if (!mr.ok) rep.warn("master section truncated, mastering bypassed");
+        else out.fx.master = m;
     }
     if (const Sec* ms = find(TAG_META)) {
         Reader mr = sec_reader(ms);

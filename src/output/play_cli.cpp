@@ -4,7 +4,7 @@
 // and the exercise of plan §11's runtime diagnostics (voices, steals, drops,
 // and CPU time per render callback, min/avg/max over a 1s window).
 //
-//   midisynth_play <song.mid> [--bank b.json] [--drums k.json] [--fx cfg.json]
+//   midisynth_play <song.mid> [--bank b.json] [--drums k.json] [--fx cfg.json] [--master m.json]
 //                  [--loop] [--tempo milli] [--volume milli] [--seek ms]
 //
 // The audio callback calls msynth_render (which advances the sequencer too,
@@ -84,12 +84,12 @@ void print_report(const char* what, const char* report) {
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr,
-                     "usage: %s <song.mid> [--bank b.json] [--drums k.json] [--fx cfg.json]\n"
+                     "usage: %s <song.mid> [--bank b.json] [--drums k.json] [--fx cfg.json] [--master m.json]\n"
                      "       [--loop] [--tempo milli] [--volume milli] [--seek ms]\n",
                      argv[0]);
         return 2;
     }
-    std::string bank_path, drums_path, fx_path;
+    std::string bank_path, drums_path, fx_path, master_path;
     bool loop = false;
     int tempo_milli = 1000, volume_milli = 0, seek_ms = 0;
     for (int i = 2; i < argc; ++i) {
@@ -97,6 +97,7 @@ int main(int argc, char** argv) {
         if (a == "--bank" && i + 1 < argc) bank_path = argv[++i];
         else if (a == "--drums" && i + 1 < argc) drums_path = argv[++i];
         else if (a == "--fx" && i + 1 < argc) fx_path = argv[++i];
+        else if (a == "--master" && i + 1 < argc) master_path = argv[++i];
         else if (a == "--loop") loop = true;
         else if (a == "--tempo" && i + 1 < argc) tempo_milli = std::atoi(argv[++i]);
         else if (a == "--volume" && i + 1 < argc) volume_milli = std::atoi(argv[++i]);
@@ -143,6 +144,9 @@ int main(int argc, char** argv) {
     print_report(baked ? "track" : "song", report);
     if (baked && (!bank_path.empty() || !drums_path.empty() || !fx_path.empty()))
         std::fprintf(stderr, "note: .mstk embeds its own content; --bank/--drums/--fx ignored\n");
+    // --master applies on top of whatever the song/track brought (auditioning
+    // a mastering preset against a baked track).
+    if (!load_json(master_path, "master", msynth_load_master_json)) return 1;
 
     msynth_set_loop(synth, loop);
     msynth_set_tempo_scale_milli(synth, tempo_milli);

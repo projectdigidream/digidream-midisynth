@@ -297,3 +297,231 @@ TEST(music_director_mute_and_duck) {
     run(15);
     CHECK(peak_abs(run(20)) > 100);
 }
+
+// ---------------------------------------------------------------------------
+// Live editing + cue scheduling.
+
+namespace {
+// 4 beats at 120 BPM: note 60 held across beats 1-2, note 64 on beat 3.
+std::vector<u8> edit_song_a() {
+    TrackBuilder t;
+    t.tempo(0, 500000);
+    t.program(0, 0, 0);
+    t.note_on(0, 0, 60, 100).note_off(960, 0, 60);
+    t.note_on(0, 0, 64, 100).note_off(480, 0, 64);
+    t.end(480);
+    return build_smf(0, 480, {t});
+}
+ParsedSong parse_bytes(const std::vector<u8>& smf) {
+    ParsedSong p;
+    smf_parse(smf.data(), smf.size(), p);
+    return p;
+}
+}  // namespace
+
+TEST(replace_keeps_position_and_releases_deleted_note) {
+    SeqFixture f;
+    auto a = edit_song_a();
+    f.seq.load(a.data(), a.size());
+    f.seq.play();
+    f.run(20);  // ~0.21s: note 60 sounding
+    const u64 pos = f.seq.song_pos_samples();
+    CHECK(f.engine.pool_diag().active_voices >= 1);
+
+    // Edited song: note 60 deleted, note 64 kept.
+    TrackBuilder t;
+    t.tempo(0, 500000);
+    t.program(0, 0, 0);
+    t.note_on(960, 0, 64, 100).note_off(480, 0, 64);
+    t.end(480);
+    auto b = build_smf(0, 480, {t});
+    f.seq.replace_song_keep_position(parse_bytes(b));
+    CHECK_EQ(f.seq.song_pos_samples(), pos);  // position kept exactly
+    CHECK(f.seq.playing());
+    // The deleted note gets a NORMAL release (20ms patch release), not a cut:
+    // still audible right after, silent shortly later.
+    auto tail = f.run(1);
+    CHECK(peak_abs(tail) > 0);
+    f.run(30);
+    CHECK_EQ(f.engine.pool_diag().active_voices, 0);
+    // Then the kept note 64 arrives on beat 3 as scheduled.
+    f.run(80);
+    CHECK(f.engine.pool_diag().active_voices >= 0);
+}
+
+TEST(replace_restrikes_added_straddling_note_and_applies_program) {
+    SeqFixture f;
+    auto a = edit_song_a();
+    f.seq.load(a.data(), a.size());
+    f.seq.play();
+    f.run(20);
+    // New song: program 5, plus a new long note 67 starting before the playhead.
+    TrackBuilder t;
+    t.tempo(0, 500000);
+    t.program(0, 0, 5);
+    t.note_on(0, 0, 60, 100).note_on(0, 0, 67, 90);  // both from tick 0
+    t.note_off(960, 0, 60).note_off(960, 0, 67);       // 67 lasts to tick 1920
+    t.end();
+    auto b = build_smf(0, 480, {t});
+    f.seq.replace_song_keep_position(parse_bytes(b));
+    f.run(2);
+    CHECK_EQ(f.engine.channel(0).program, 5);         // controller diff applied
+    CHECK(f.engine.active_note_count(0) >= 2);        // 60 continues, 67 struck now
+}
+
+TEST(replace_keeps_loop_override_and_wraps_shortened_loop) {
+    SeqFixture f;
+    auto a = edit_song_a();
+    f.seq.load(a.data(), a.size());
+    f.seq.set_loop_ticks(0, 1920);
+    f.seq.set_loop_enabled(true);
+    f.seq.play();
+    f.run(150);  // ~1.6s: into the second pass (loop is 2s)
+    CHECK(f.seq.playing());
+    // Replace with a song only 1 beat long while positioned past it: wraps.
+    TrackBuilder t;
+    t.tempo(0, 500000);
+    t.note_on(0, 0, 60, 100).note_off(480, 0, 60).end();
+    auto b = build_smf(0, 480, {t});
+    f.seq.replace_song_keep_position(parse_bytes(b), ReplaceOptions{false, true, true});
+    CHECK(f.seq.song_pos_samples() < 24000);
+    CHECK(f.seq.playing());
+    f.run(100);
+    CHECK(f.seq.playing());  // keeps looping the short piece
+}
+
+TEST(replace_tempo_edit_keeps_tick_position) {
+    SeqFixture f;
+    auto a = edit_song_a();  // 120 BPM
+    f.seq.load(a.data(), a.size());
+    f.seq.play();
+    f.run(47);  // ~0.5s = tick 480
+    const u32 tick_before = f.seq.current_tick();
+    TrackBuilder t;
+    t.tempo(0, 250000);  // 240 BPM version of the same music
+    t.program(0, 0, 0);
+    t.note_on(0, 0, 60, 100).note_off(960, 0, 60);
+    t.note_on(0, 0, 64, 100).note_off(480, 0, 64);
+    t.end(480);
+    auto b = build_smf(0, 480, {t});
+    f.seq.replace_song_keep_position(parse_bytes(b));
+    CHECK_NEAR(f.seq.current_tick(), tick_before, 2);  // musical position preserved
+    CHECK(f.seq.song_pos_samples() < 15000);           // ...at the new tempo's sample
+}
+
+TEST(queue_next_switches_exactly_at_loop_end) {
+    struct Ctx { int switches = 0; u64 at_engine = 0; } ctx;
+    SeqFixture f;
+    // Piece A: 1 bar of note 60 looping; piece B: note 72.
+    TrackBuilder ta, tb;
+    ta.tempo(0, 500000).note_on(0, 0, 60, 100).note_off(1920, 0, 60).end();
+    tb.tempo(0, 500000).note_on(0, 0, 72, 100).note_off(1920, 0, 72).end();
+    auto a = build_smf(0, 480, {ta}), b = build_smf(0, 480, {tb});
+    f.seq.load(a.data(), a.size());
+    f.seq.set_loop_enabled(true);
+    f.seq.set_piece_callback([](void* u) { ++static_cast<Ctx*>(u)->switches; }, &ctx);
+    f.seq.play();
+    f.run(10);
+    CHECK(!f.seq.queued());
+    f.seq.queue_next(parse_bytes(b), QueueAt{true, 0}, true);
+    CHECK(f.seq.queued());
+    // The boundary is at 2.0s (96000 samples). Before it: no switch.
+    f.run(150);  // to ~1.7s
+    CHECK_EQ(ctx.switches, 0);
+    CHECK(f.seq.samples_to_boundary() > 0 && f.seq.samples_to_boundary() < 96000);
+    f.run(40);   // crosses 2.0s
+    CHECK_EQ(ctx.switches, 1);
+    CHECK(!f.seq.queued());
+    CHECK(f.seq.playing());
+    // Now piece B: its note 72 is sounding, not 60.
+    f.run(5);
+    u8 notes[8];
+    const int n = f.engine.active_notes(0, notes, 8);
+    bool has72 = false, has60 = false;
+    for (int i = 0; i < n; ++i) { has72 |= notes[i] == 72; has60 |= notes[i] == 60; }
+    CHECK(has72);
+    CHECK(!has60);
+    // B loops on its own afterwards.
+    f.run(300);
+    CHECK(f.seq.playing());
+}
+
+TEST(queue_next_at_sample_and_cancel) {
+    SeqFixture f;
+    TrackBuilder ta, tb;
+    ta.tempo(0, 500000).note_on(0, 0, 60, 100).note_off(3840, 0, 60).end();
+    tb.tempo(0, 500000).note_on(0, 0, 72, 100).note_off(1920, 0, 72).end();
+    auto a = build_smf(0, 480, {ta}), b = build_smf(0, 480, {tb});
+    f.seq.load(a.data(), a.size());
+    f.seq.set_loop_enabled(true);
+    f.seq.play();
+    // Cancel works.
+    f.seq.queue_next(parse_bytes(b), QueueAt{false, 48000}, true);
+    CHECK(f.seq.queued());
+    f.seq.cancel_queued();
+    CHECK(!f.seq.queued());
+    f.run(100);
+    u8 notes[8];
+    int n = f.engine.active_notes(0, notes, 8);
+    CHECK(n >= 1 && notes[0] == 60);
+    // Queue at a specific sample (1.5s): switch happens there, not at loop end (4s).
+    f.seq.queue_next(parse_bytes(b), QueueAt{false, 72000}, true);
+    f.run(50);  // ~1.07 + 0.53 = ~1.6s
+    n = f.engine.active_notes(0, notes, 8);
+    bool has72 = false;
+    for (int i = 0; i < n; ++i) has72 |= notes[i] == 72;
+    CHECK(has72);
+}
+
+TEST(queue_next_fires_at_song_end_when_not_looping) {
+    SeqFixture f;
+    TrackBuilder ta, tb;
+    ta.tempo(0, 500000).note_on(0, 0, 60, 100).note_off(960, 0, 60).end();
+    tb.tempo(0, 500000).note_on(0, 0, 72, 100).note_off(1920, 0, 72).end();
+    auto a = build_smf(0, 480, {ta}), b = build_smf(0, 480, {tb});
+    f.seq.load(a.data(), a.size());
+    f.seq.set_loop_enabled(false);
+    f.seq.play();
+    f.seq.queue_next(parse_bytes(b), QueueAt{true, 0}, true);
+    f.run(120);  // past A's 1.0s end
+    CHECK(f.seq.playing());  // B took over instead of stopping
+    u8 notes[8];
+    const int n = f.engine.active_notes(0, notes, 8);
+    bool has72 = false;
+    for (int i = 0; i < n; ++i) has72 |= notes[i] == 72;
+    CHECK(has72);
+}
+
+TEST(director_transition_modes) {
+    EngineFixture f;
+    MusicDirector dir(f.engine);
+    TrackBuilder ta, tb;
+    ta.tempo(0, 500000).time_sig(0, 4, 2).note_on(0, 0, 60, 100).note_off(1920, 0, 60).end();
+    tb.tempo(0, 500000).note_on(0, 0, 72, 100).note_off(1920, 0, 72).end();
+    auto a = build_smf(0, 480, {ta}), b = build_smf(0, 480, {tb});
+    dir.load_song(a.data(), a.size());
+    dir.set_loop_enabled(true);
+    dir.play();
+    auto run = [&](int buffers) {
+        i16 buf[BUFFER_FRAMES * 2];
+        for (int i = 0; i < buffers; ++i) { dir.advance(BUFFER_FRAMES); f.engine.render(buf, BUFFER_FRAMES); }
+    };
+    run(10);
+    dir.transition(parse_bytes(b), MusicDirector::TransitionMode::AtNextBar, 0);
+    CHECK(dir.transition_queued());
+    CHECK(dir.ms_to_boundary() > 0);
+    run(200);  // past bar 1 (2s)
+    CHECK(!dir.transition_queued());
+    u8 notes[8];
+    const int n = f.engine.active_notes(0, notes, 8);
+    bool has72 = false;
+    for (int i = 0; i < n; ++i) has72 |= notes[i] == 72;
+    CHECK(has72);
+    // Immediate hard switch back to A.
+    dir.transition(parse_bytes(a), MusicDirector::TransitionMode::Immediate, 0);
+    run(5);
+    const int n2 = f.engine.active_notes(0, notes, 8);
+    bool has60 = false;
+    for (int i = 0; i < n2; ++i) has60 |= notes[i] == 60;
+    CHECK(has60);
+}

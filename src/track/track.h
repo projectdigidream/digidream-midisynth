@@ -9,6 +9,7 @@
 //         song actually plays notes with
 //   KIT   tree-shaken drum kit JSON: only the notes the song hits
 //   FX    resolved song-level reverb/chorus parameters
+//   MSTR  mastering chain parameters (optional; absent = bypass)
 //   META  name, duration, instrument bitmaps, optional reference-render
 //         sha256 (a per-track determinism seal, checkable after transport)
 //
@@ -56,6 +57,8 @@ struct BakeOptions {
     std::string name;                 // defaults to "track"
     const char* fx_json = nullptr;    // optional song FX config
     size_t fx_json_len = 0;
+    const char* master_json = nullptr;  // optional master.json (overrides fx "master")
+    size_t master_json_len = 0;
     // Explicit loop override in ticks (plan §9 priority 1); baked in so the
     // deliverable is self-contained. -1 = keep what the SMF declares.
     i64 loop_start_tick = -1;

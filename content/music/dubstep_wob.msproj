@@ -1,0 +1,1617 @@
+{
+ "version": 1,
+ "name": "dubstep wob",
+ "ppq": 480,
+ "tempoMap": [
+  {
+   "tick": 0,
+   "bpm": 140
+  }
+ ],
+ "timeSigs": [
+  {
+   "tick": 0,
+   "num": 4,
+   "den": 4
+  }
+ ],
+ "tracks": [
+  {
+   "name": "Wob 1/8",
+   "channel": 1,
+   "program": 2,
+   "color": "#4a90d9",
+   "mute": false,
+   "solo": false,
+   "arm": false,
+   "notes": [
+    {
+     "tick": 0,
+     "dur": 480,
+     "note": 39,
+     "vel": 100
+    },
+    {
+     "tick": 0,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 0,
+     "dur": 480,
+     "note": 65,
+     "vel": 100
+    },
+    {
+     "tick": 480,
+     "dur": 3360,
+     "note": 39,
+     "vel": 100
+    },
+    {
+     "tick": 480,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 960,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 1440,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 1440,
+     "dur": 480,
+     "note": 59,
+     "vel": 100
+    },
+    {
+     "tick": 1920,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 1920,
+     "dur": 480,
+     "note": 56,
+     "vel": 100
+    },
+    {
+     "tick": 2400,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 2400,
+     "dur": 480,
+     "note": 58,
+     "vel": 100
+    },
+    {
+     "tick": 2880,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 2880,
+     "dur": 480,
+     "note": 61,
+     "vel": 100
+    },
+    {
+     "tick": 3360,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 3360,
+     "dur": 480,
+     "note": 63,
+     "vel": 100
+    },
+    {
+     "tick": 3840,
+     "dur": 3840,
+     "note": 38,
+     "vel": 100
+    },
+    {
+     "tick": 3840,
+     "dur": 480,
+     "note": 50,
+     "vel": 100
+    },
+    {
+     "tick": 3840,
+     "dur": 480,
+     "note": 61,
+     "vel": 100
+    },
+    {
+     "tick": 4320,
+     "dur": 480,
+     "note": 50,
+     "vel": 100
+    },
+    {
+     "tick": 4800,
+     "dur": 480,
+     "note": 50,
+     "vel": 100
+    },
+    {
+     "tick": 5280,
+     "dur": 480,
+     "note": 50,
+     "vel": 100
+    },
+    {
+     "tick": 5280,
+     "dur": 480,
+     "note": 58,
+     "vel": 100
+    },
+    {
+     "tick": 5760,
+     "dur": 1800,
+     "note": 50,
+     "vel": 118
+    },
+    {
+     "tick": 5760,
+     "dur": 480,
+     "note": 56,
+     "vel": 100
+    },
+    {
+     "tick": 7200,
+     "dur": 480,
+     "note": 59,
+     "vel": 100
+    },
+    {
+     "tick": 7680,
+     "dur": 3360,
+     "note": 38,
+     "vel": 100
+    },
+    {
+     "tick": 7680,
+     "dur": 480,
+     "note": 45,
+     "vel": 100
+    },
+    {
+     "tick": 7680,
+     "dur": 480,
+     "note": 61,
+     "vel": 100
+    },
+    {
+     "tick": 8160,
+     "dur": 480,
+     "note": 45,
+     "vel": 100
+    },
+    {
+     "tick": 8640,
+     "dur": 480,
+     "note": 45,
+     "vel": 100
+    },
+    {
+     "tick": 8640,
+     "dur": 480,
+     "note": 56,
+     "vel": 100
+    },
+    {
+     "tick": 9120,
+     "dur": 480,
+     "note": 45,
+     "vel": 100
+    },
+    {
+     "tick": 9120,
+     "dur": 480,
+     "note": 58,
+     "vel": 100
+    },
+    {
+     "tick": 9600,
+     "dur": 480,
+     "note": 45,
+     "vel": 100
+    },
+    {
+     "tick": 9600,
+     "dur": 480,
+     "note": 61,
+     "vel": 100
+    },
+    {
+     "tick": 10080,
+     "dur": 480,
+     "note": 45,
+     "vel": 100
+    },
+    {
+     "tick": 10080,
+     "dur": 480,
+     "note": 56,
+     "vel": 100
+    },
+    {
+     "tick": 10560,
+     "dur": 480,
+     "note": 45,
+     "vel": 100
+    },
+    {
+     "tick": 10560,
+     "dur": 480,
+     "note": 58,
+     "vel": 100
+    },
+    {
+     "tick": 11040,
+     "dur": 480,
+     "note": 38,
+     "vel": 100
+    },
+    {
+     "tick": 11040,
+     "dur": 480,
+     "note": 45,
+     "vel": 100
+    },
+    {
+     "tick": 11520,
+     "dur": 2400,
+     "note": 39,
+     "vel": 100
+    },
+    {
+     "tick": 11520,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 11520,
+     "dur": 480,
+     "note": 58,
+     "vel": 100
+    },
+    {
+     "tick": 12000,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 12000,
+     "dur": 480,
+     "note": 56,
+     "vel": 100
+    },
+    {
+     "tick": 12480,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 12480,
+     "dur": 480,
+     "note": 58,
+     "vel": 100
+    },
+    {
+     "tick": 12960,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 12960,
+     "dur": 480,
+     "note": 56,
+     "vel": 100
+    },
+    {
+     "tick": 13440,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 13440,
+     "dur": 480,
+     "note": 58,
+     "vel": 100
+    },
+    {
+     "tick": 13920,
+     "dur": 1440,
+     "note": 39,
+     "vel": 100
+    },
+    {
+     "tick": 13920,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 13920,
+     "dur": 480,
+     "note": 61,
+     "vel": 100
+    },
+    {
+     "tick": 14400,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 14400,
+     "dur": 480,
+     "note": 63,
+     "vel": 100
+    },
+    {
+     "tick": 14880,
+     "dur": 480,
+     "note": 47,
+     "vel": 100
+    },
+    {
+     "tick": 14880,
+     "dur": 480,
+     "note": 65,
+     "vel": 100
+    },
+    {
+     "tick": 26400,
+     "dur": 480,
+     "note": 34,
+     "vel": 100
+    }
+   ],
+   "ccs": [
+    {
+     "tick": 0,
+     "cc": 7,
+     "val": 112
+    }
+   ],
+   "bends": []
+  },
+  {
+   "name": "Wob talk",
+   "channel": 3,
+   "program": 4,
+   "color": "#e0b060",
+   "mute": true,
+   "solo": false,
+   "arm": false,
+   "notes": [
+    {
+     "tick": 11520,
+     "dur": 1800,
+     "note": 47,
+     "vel": 118
+    },
+    {
+     "tick": 13440,
+     "dur": 1800,
+     "note": 47,
+     "vel": 118
+    }
+   ],
+   "ccs": [
+    {
+     "tick": 0,
+     "cc": 7,
+     "val": 112
+    }
+   ],
+   "bends": []
+  },
+  {
+   "name": "Drums",
+   "channel": 9,
+   "program": 0,
+   "color": "#ffab91",
+   "mute": false,
+   "solo": false,
+   "arm": false,
+   "notes": [
+    {
+     "tick": 0,
+     "dur": 200,
+     "note": 36,
+     "vel": 124
+    },
+    {
+     "tick": 480,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 960,
+     "dur": 220,
+     "note": 38,
+     "vel": 120
+    },
+    {
+     "tick": 1440,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 1920,
+     "dur": 200,
+     "note": 36,
+     "vel": 124
+    },
+    {
+     "tick": 2400,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 2880,
+     "dur": 220,
+     "note": 38,
+     "vel": 120
+    },
+    {
+     "tick": 3360,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 3600,
+     "dur": 200,
+     "note": 36,
+     "vel": 108
+    },
+    {
+     "tick": 3840,
+     "dur": 200,
+     "note": 36,
+     "vel": 124
+    },
+    {
+     "tick": 4320,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 4800,
+     "dur": 220,
+     "note": 38,
+     "vel": 120
+    },
+    {
+     "tick": 5280,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 5760,
+     "dur": 200,
+     "note": 36,
+     "vel": 124
+    },
+    {
+     "tick": 6240,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 6720,
+     "dur": 220,
+     "note": 38,
+     "vel": 120
+    },
+    {
+     "tick": 7200,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 7440,
+     "dur": 200,
+     "note": 36,
+     "vel": 108
+    },
+    {
+     "tick": 7680,
+     "dur": 200,
+     "note": 36,
+     "vel": 124
+    },
+    {
+     "tick": 8160,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 8640,
+     "dur": 220,
+     "note": 38,
+     "vel": 120
+    },
+    {
+     "tick": 9120,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 9600,
+     "dur": 200,
+     "note": 36,
+     "vel": 124
+    },
+    {
+     "tick": 10080,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 10560,
+     "dur": 220,
+     "note": 38,
+     "vel": 120
+    },
+    {
+     "tick": 11040,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 11280,
+     "dur": 200,
+     "note": 36,
+     "vel": 108
+    },
+    {
+     "tick": 11520,
+     "dur": 200,
+     "note": 36,
+     "vel": 124
+    },
+    {
+     "tick": 12000,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 12480,
+     "dur": 220,
+     "note": 38,
+     "vel": 120
+    },
+    {
+     "tick": 12960,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 13440,
+     "dur": 200,
+     "note": 36,
+     "vel": 124
+    },
+    {
+     "tick": 13920,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 14400,
+     "dur": 220,
+     "note": 38,
+     "vel": 120
+    },
+    {
+     "tick": 14880,
+     "dur": 60,
+     "note": 42,
+     "vel": 74
+    },
+    {
+     "tick": 15120,
+     "dur": 200,
+     "note": 36,
+     "vel": 108
+    }
+   ],
+   "ccs": [
+    {
+     "tick": 0,
+     "cc": 7,
+     "val": 127
+    }
+   ],
+   "bends": []
+  }
+ ],
+ "loop": {
+  "startTick": 0,
+  "endTick": 15360,
+  "enabled": true
+ },
+ "groove": {
+  "amount": 0,
+  "grid": "1/16"
+ },
+ "bank": {
+  "version": 1,
+  "_about": "Dubstep wobble bass, timbre fitted to a real recording. TWO numbers here are load-bearing and both are easy to get wrong: FilterCutoff 1.0 spans the whole 9.2-octave cutoff range, so 0.12 is a ~2-octave sweep and 0.5 is a whoosh; and postDrive is a saturator AFTER the filter, so above ~1.6 it regenerates the harmonics the filter just removed and the wobble stops being audible at all. Grit comes from the pre-filter drive, which the filter then shapes.",
+  "programs": {
+   "1": {
+    "name": "wob_quarter",
+    "layers": [
+     {
+      "_about": "Wobble layer: fitted saw timbre, with the LFO walking the cutoff.",
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 48,
+        "endHarmonics": 48,
+        "falloff": "triangle"
+       }
+      },
+      "mixGain": 0.761,
+      "unison": {
+       "voices": 3,
+       "detuneCents": 12.2,
+       "spread": 0.4,
+       "phaseSpread": 1
+      },
+      "ampEnv": {
+       "attack": 4,
+       "decay": 0,
+       "sustain": 1,
+       "release": 70
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 1463,
+       "resonance": 0.62,
+       "slope": 24,
+       "drive": 7
+      },
+      "postDrive": 1.55,
+      "lfos": [
+       {
+        "shape": "sine",
+        "sync": "1/4",
+        "retrigger": false,
+        "rateHz": 100
+       }
+      ],
+      "modMatrix": [
+       {
+        "src": "LFO1",
+        "dst": "FilterCutoff",
+        "amount": 0.17
+       },
+       {
+        "src": "ModWheel",
+        "dst": "FilterCutoff",
+        "amount": 0.08
+       }
+      ]
+     },
+     {
+      "_about": "Sub: clean sine an octave below the wobble, mono, centre, quiet.",
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 1,
+        "endHarmonics": 1,
+        "falloff": "flat"
+       }
+      },
+      "detuneCents": -1200,
+      "mixGain": 0.2,
+      "ampEnv": {
+       "attack": 4,
+       "decay": 0,
+       "sustain": 1,
+       "release": 60
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 36,
+       "slope": 24
+      }
+     }
+    ]
+   },
+   "2": {
+    "name": "wob_eighth",
+    "layers": [
+     {
+      "_about": "Wobble layer: fitted saw timbre, with the LFO walking the cutoff.",
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 48,
+        "endHarmonics": 48,
+        "falloff": "flat"
+       }
+      },
+      "mixGain": 0.439,
+      "unison": {
+       "voices": 3,
+       "detuneCents": 12.2,
+       "spread": 0.4,
+       "phaseSpread": 1
+      },
+      "ampEnv": {
+       "attack": 4,
+       "decay": 0,
+       "sustain": 1,
+       "release": 70
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 384,
+       "resonance": 0.648,
+       "slope": 24,
+       "drive": 7
+      },
+      "postDrive": 5.033,
+      "lfos": [
+       {
+        "shape": "sine",
+        "sync": "1/8",
+        "retrigger": false
+       }
+      ],
+      "modMatrix": [
+       {
+        "src": "LFO1",
+        "dst": "FilterCutoff",
+        "amount": 0.12
+       },
+       {
+        "src": "ModWheel",
+        "dst": "FilterCutoff",
+        "amount": 0.08
+       }
+      ],
+      "keyTrackFilter": 0.047
+     },
+     {
+      "_about": "Sub: clean sine an octave below the wobble, mono, centre, quiet.",
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 1,
+        "endHarmonics": 1,
+        "falloff": "flat"
+       }
+      },
+      "detuneCents": -1200,
+      "mixGain": 0.2,
+      "ampEnv": {
+       "attack": 4,
+       "decay": 0,
+       "sustain": 1,
+       "release": 60
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 150,
+       "slope": 24
+      }
+     }
+    ]
+   },
+   "3": {
+    "name": "wob_sixteenth",
+    "layers": [
+     {
+      "_about": "Wobble layer: fitted saw timbre, with the LFO walking the cutoff.",
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 48,
+        "endHarmonics": 48,
+        "falloff": "saw"
+       }
+      },
+      "mixGain": 0.55,
+      "unison": {
+       "voices": 3,
+       "detuneCents": 12.2,
+       "spread": 0.4,
+       "phaseSpread": 1
+      },
+      "ampEnv": {
+       "attack": 4,
+       "decay": 0,
+       "sustain": 1,
+       "release": 70
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 1000,
+       "resonance": 0.62,
+       "slope": 24,
+       "drive": 7
+      },
+      "postDrive": 1.55,
+      "lfos": [
+       {
+        "shape": "sine",
+        "sync": "1/16",
+        "retrigger": false
+       }
+      ],
+      "modMatrix": [
+       {
+        "src": "LFO1",
+        "dst": "FilterCutoff",
+        "amount": 0.12
+       },
+       {
+        "src": "ModWheel",
+        "dst": "FilterCutoff",
+        "amount": 0.08
+       }
+      ]
+     },
+     {
+      "_about": "Sub: clean sine an octave below the wobble, mono, centre, quiet.",
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 1,
+        "endHarmonics": 1,
+        "falloff": "flat"
+       }
+      },
+      "detuneCents": -1200,
+      "mixGain": 0.2,
+      "ampEnv": {
+       "attack": 4,
+       "decay": 0,
+       "sustain": 1,
+       "release": 60
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 150,
+       "slope": 24
+      }
+     }
+    ]
+   },
+   "4": {
+    "name": "wob_talking",
+    "layers": [
+     {
+      "_about": "Wobble layer: fitted saw timbre, with the LFO walking the cutoff.",
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 48,
+        "endHarmonics": 48,
+        "falloff": "saw"
+       }
+      },
+      "mixGain": 0.55,
+      "unison": {
+       "voices": 3,
+       "detuneCents": 12.2,
+       "spread": 0.4,
+       "phaseSpread": 1
+      },
+      "ampEnv": {
+       "attack": 4,
+       "decay": 0,
+       "sustain": 1,
+       "release": 70
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 1000,
+       "resonance": 0.62,
+       "slope": 24,
+       "drive": 7
+      },
+      "postDrive": 1.55,
+      "lfos": [
+       {
+        "shape": "triangle",
+        "sync": "1/8",
+        "retrigger": false
+       }
+      ],
+      "modMatrix": [
+       {
+        "src": "LFO1",
+        "dst": "FilterCutoff",
+        "amount": 0.12
+       },
+       {
+        "src": "ModWheel",
+        "dst": "FilterCutoff",
+        "amount": 0.08
+       }
+      ]
+     },
+     {
+      "_about": "Sub: clean sine an octave below the wobble, mono, centre, quiet.",
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 1,
+        "endHarmonics": 1,
+        "falloff": "flat"
+       }
+      },
+      "detuneCents": -1200,
+      "mixGain": 0.2,
+      "ampEnv": {
+       "attack": 4,
+       "decay": 0,
+       "sustain": 1,
+       "release": 60
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 150,
+       "slope": 24
+      }
+     }
+    ]
+   }
+  }
+ },
+ "kit": {
+  "version": 1,
+  "_about": "A synthesised break kit for ~174 BPM. No samples: the snare is a tuned body plus pink noise, the cymbals are the inharmonic metal oscillator, and ghost notes come from velocity rather than from separate sounds -- play 38 softly and it thins out by itself.",
+  "notes": {
+   "36": {
+    "name": "dnb_kick",
+    "oneShot": true,
+    "layers": [
+     {
+      "_about": "Body: a sine dropped fast from a high start. Short, so it never fights the sub.",
+      "pitchNote": 33,
+      "mixGain": 0.72,
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 1,
+        "endHarmonics": 1,
+        "falloff": "flat"
+       }
+      },
+      "ampEnv": {
+       "attack": 0,
+       "decay": 200,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "pitchEnv": {
+       "attack": 0,
+       "decay": 26,
+       "sustain": 0,
+       "release": 0,
+       "depthSemis": 30
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 1400,
+       "drive": 2.4
+      }
+     },
+     {
+      "_about": "Beater click so it reads on small speakers.",
+      "osc": "noise",
+      "noiseColor": "white",
+      "mixGain": 0.18,
+      "ampEnv": {
+       "attack": 0,
+       "decay": 12,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 2600,
+       "resonance": 0.3
+      }
+     }
+    ]
+   },
+   "37": {
+    "name": "dnb_rim",
+    "oneShot": true,
+    "layers": [
+     {
+      "osc": "noise",
+      "noiseColor": "white",
+      "mixGain": 0.3,
+      "ampEnv": {
+       "attack": 0,
+       "decay": 26,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 2400,
+       "resonance": 0.7
+      }
+     }
+    ]
+   },
+   "38": {
+    "name": "dnb_snare",
+    "oneShot": true,
+    "_about": "Velocity does the ghosting: soft hits lose the body and darken the noise.",
+    "layers": [
+     {
+      "_about": "Shell: the drum itself, and on a real snare this is most of the sound. Lowpassed, not bandpassed at 1.9 kHz where the tone does not reach.",
+      "pitchNote": 55,
+      "mixGain": 0.8,
+      "velCurve": "soft",
+      "wavetable": {
+       "generator": "additiveHarmonicMorph",
+       "frameCount": 1,
+       "params": {
+        "startHarmonics": 3,
+        "endHarmonics": 3,
+        "falloff": "saw"
+       }
+      },
+      "ampEnv": {
+       "attack": 0,
+       "decay": 135,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "pitchEnv": {
+       "attack": 0,
+       "decay": 28,
+       "sustain": 0,
+       "release": 0,
+       "depthSemis": 5
+      },
+      "filter": {
+       "mode": "lowpass",
+       "cutoffHz": 820,
+       "resonance": 0.25,
+       "drive": 1.7
+      },
+      "modMatrix": [
+       {
+        "src": "Velocity",
+        "dst": "Amplitude",
+        "amount": 0.35
+       }
+      ]
+     },
+     {
+      "_about": "Wires: the buzz. Band-limited on both sides so it reads as snares, not as white hiss.",
+      "osc": "noise",
+      "noiseColor": "pink",
+      "mixGain": 0.7,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 175,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "highpass",
+       "cutoffHz": 1500,
+       "slope": 12
+      },
+      "filter2": {
+       "mode": "lowpass",
+       "cutoffHz": 9000
+      },
+      "sendReverb": 0.165,
+      "modMatrix": [
+       {
+        "src": "Velocity",
+        "dst": "FilterCutoff",
+        "amount": 0.25
+       }
+      ]
+     },
+     {
+      "_about": "A short snap for the transient, kept quiet -- it was dominating.",
+      "osc": "noise",
+      "noiseColor": "white",
+      "mixGain": 0.4,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 30,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 3400,
+       "resonance": 0.25
+      }
+     }
+    ]
+   },
+   "39": {
+    "name": "dnb_clap",
+    "oneShot": true,
+    "_about": "Three noise bursts a few milliseconds apart -- a real clap is several hands, not one.",
+    "layers": [
+     {
+      "osc": "noise",
+      "noiseColor": "pink",
+      "mixGain": 0.45,
+      "startDelayMs": 0,
+      "ampEnv": {
+       "attack": 0,
+       "decay": 22,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 1500,
+       "resonance": 0.4
+      }
+     },
+     {
+      "osc": "noise",
+      "noiseColor": "pink",
+      "mixGain": 0.45,
+      "startDelayMs": 11,
+      "ampEnv": {
+       "attack": 0,
+       "decay": 22,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 1500,
+       "resonance": 0.4
+      }
+     },
+     {
+      "osc": "noise",
+      "noiseColor": "pink",
+      "mixGain": 0.8,
+      "startDelayMs": 23,
+      "ampEnv": {
+       "attack": 0,
+       "decay": 190,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 1400,
+       "resonance": 0.35
+      },
+      "sendReverb": 0.248
+     }
+    ]
+   },
+   "42": {
+    "name": "dnb_hat_closed",
+    "oneShot": true,
+    "exclusiveGroup": 1,
+    "layers": [
+     {
+      "_about": "Noise between a highpass and a lowpass: a cymbal is a band, not everything above 8 kHz.",
+      "osc": "noise",
+      "noiseColor": "pink",
+      "mixGain": 1,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 36,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "highpass",
+       "cutoffHz": 2400,
+       "slope": 12
+      },
+      "filter2": {
+       "mode": "lowpass",
+       "cutoffHz": 9500
+      },
+      "modMatrix": [
+       {
+        "src": "Velocity",
+        "dst": "FilterCutoff",
+        "amount": 0.2
+       }
+      ]
+     },
+     {
+      "_about": "Metal cluster for the inharmonic clank, in its own range.",
+      "osc": "metal",
+      "pitchNote": 74,
+      "mixGain": 0.55,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 25,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 4200,
+       "resonance": 0.2
+      }
+     }
+    ]
+   },
+   "44": {
+    "name": "dnb_hat_pedal",
+    "oneShot": true,
+    "exclusiveGroup": 1,
+    "layers": [
+     {
+      "_about": "Noise between a highpass and a lowpass: a cymbal is a band, not everything above 8 kHz.",
+      "osc": "noise",
+      "noiseColor": "pink",
+      "mixGain": 0.9,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 64,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "highpass",
+       "cutoffHz": 2300,
+       "slope": 12
+      },
+      "filter2": {
+       "mode": "lowpass",
+       "cutoffHz": 9000
+      },
+      "modMatrix": [
+       {
+        "src": "Velocity",
+        "dst": "FilterCutoff",
+        "amount": 0.2
+       }
+      ]
+     },
+     {
+      "_about": "Metal cluster for the inharmonic clank, in its own range.",
+      "osc": "metal",
+      "pitchNote": 72,
+      "mixGain": 0.45,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 44,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 4200,
+       "resonance": 0.2
+      }
+     }
+    ]
+   },
+   "46": {
+    "name": "dnb_hat_open",
+    "oneShot": true,
+    "exclusiveGroup": 1,
+    "layers": [
+     {
+      "_about": "Noise between a highpass and a lowpass: a cymbal is a band, not everything above 8 kHz.",
+      "osc": "noise",
+      "noiseColor": "pink",
+      "mixGain": 0.95,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 340,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "highpass",
+       "cutoffHz": 2400,
+       "slope": 12
+      },
+      "filter2": {
+       "mode": "lowpass",
+       "cutoffHz": 9500
+      },
+      "modMatrix": [
+       {
+        "src": "Velocity",
+        "dst": "FilterCutoff",
+        "amount": 0.2
+       }
+      ],
+      "sendReverb": 0.165
+     },
+     {
+      "_about": "Metal cluster for the inharmonic clank, in its own range.",
+      "osc": "metal",
+      "pitchNote": 74,
+      "mixGain": 0.5,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 237,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 4200,
+       "resonance": 0.2
+      }
+     }
+    ]
+   },
+   "51": {
+    "name": "dnb_ride",
+    "oneShot": true,
+    "layers": [
+     {
+      "_about": "Noise between a highpass and a lowpass: a cymbal is a band, not everything above 8 kHz.",
+      "osc": "noise",
+      "noiseColor": "pink",
+      "mixGain": 0.85,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 900,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "highpass",
+       "cutoffHz": 2200,
+       "slope": 12
+      },
+      "filter2": {
+       "mode": "lowpass",
+       "cutoffHz": 9000
+      },
+      "modMatrix": [
+       {
+        "src": "Velocity",
+        "dst": "FilterCutoff",
+        "amount": 0.2
+       }
+      ],
+      "sendReverb": 0.248
+     },
+     {
+      "_about": "Metal cluster for the inharmonic clank, in its own range.",
+      "osc": "metal",
+      "pitchNote": 80,
+      "mixGain": 0.5,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 0,
+       "decay": 630,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 4200,
+       "resonance": 0.2
+      }
+     },
+     {
+      "_about": "Stick attack.",
+      "osc": "noise",
+      "noiseColor": "white",
+      "mixGain": 0.22,
+      "ampEnv": {
+       "attack": 0,
+       "decay": 14,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "bandpass",
+       "cutoffHz": 4200,
+       "resonance": 0.35
+      }
+     }
+    ]
+   },
+   "75": {
+    "name": "dnb_shaker",
+    "oneShot": true,
+    "layers": [
+     {
+      "osc": "noise",
+      "noiseColor": "pink",
+      "mixGain": 1,
+      "velCurve": "soft",
+      "ampEnv": {
+       "attack": 2,
+       "decay": 46,
+       "sustain": 0,
+       "release": 0,
+       "decayCurve": "exp"
+      },
+      "filter": {
+       "mode": "highpass",
+       "cutoffHz": 3200,
+       "slope": 12
+      },
+      "filter2": {
+       "mode": "lowpass",
+       "cutoffHz": 9000
+      }
+     }
+    ]
+   }
+  }
+ },
+ "fx": {
+  "version": 1,
+  "reverb": {
+   "roomSize": 0.5,
+   "damping": 0.5,
+   "width": 1,
+   "wetGain": 0.1,
+   "preDelayMs": 20,
+   "highPassHz": 300
+  },
+  "chorus": {
+   "rateHz": 0.524,
+   "depthMs": 3,
+   "wetGain": 0
+  },
+  "delay": {
+   "sync": "1/8.",
+   "feedback": 0.3,
+   "wetGain": 0.2,
+   "pingPong": true
+  },
+  "sidechain": {
+   "source": 10,
+   "note": 36,
+   "targets": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "depth": 0.35,
+   "attackMs": 3,
+   "holdMs": 20,
+   "releaseMs": 150
+  },
+  "channelEq": {
+   "2": {
+    "midHz": 250
+   }
+  }
+ },
+ "master": {
+  "enabled": true,
+  "eq": {
+   "low": {
+    "hz": 92,
+    "db": -13.5
+   },
+   "mid": {
+    "hz": 650,
+    "db": -3.5,
+    "q": 1.1
+   },
+   "high": {
+    "hz": 3072,
+    "db": 11.9
+   }
+  },
+  "comp": {
+   "thresholdDb": -29.5,
+   "ratio": 7.8,
+   "attackMs": 51.7,
+   "releaseMs": 120,
+   "makeupDb": 1.5,
+   "kneeDb": 6
+  },
+  "limiter": {
+   "ceilingDb": -1,
+   "lookaheadBlocks": 2,
+   "releaseMs": 121
+  },
+  "satDrive": 1.25,
+  "width": 1.12,
+  "gainDb": 17
+ },
+ "slices": [],
+ "cues": {
+  "entry": null,
+  "transitions": {}
+ },
+ "view": {
+  "dither": true
+ }
+}

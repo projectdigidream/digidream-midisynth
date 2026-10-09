@@ -19,4 +19,8 @@ else
 fi
 
 ./scripts/run_goldens.sh
+
+# DAW model: project <-> SMF round trips + engine cross-check (node only).
+node test/smf_roundtrip.mjs > /dev/null
+
 echo "CI gate: all green"

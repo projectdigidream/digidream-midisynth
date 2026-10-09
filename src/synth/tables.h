@@ -48,6 +48,16 @@ i32 sine_q30(u32 phase) noexcept;
 // Deterministic log2 of a Q16.16 value (v > 0), result Q16.16.
 i32 log2_q16(u32 v_q16) noexcept;
 
+// 2^x for x in Q16.16, x clamped to [-16, 15]; result Q16.16 (table + lerp).
+gain_t exp2_q16(i32 x_q16) noexcept;
+// dB -> linear gain, Q16.16 (10^(dB/20) = 2^(dB * log2(10)/20)).
+gain_t db_to_lin_q16(i32 db_q16) noexcept;
+// Linear gain (Q16.16, > 0) -> dB, Q16.16.
+i32 lin_to_db_q16(u32 lin_q16) noexcept;
+// One-pole smoothing coefficient per CONTROL_BLOCK for a time constant in ms
+// (Q16.16): a = 1 - 2^(-log2(e) / tau_blocks). 0 ms -> GAIN_ONE (instant).
+gain_t onepole_coef_from_ms(i32 ms_q16) noexcept;
+
 // Raw baked sine table (4096 entries, Q2.30, full cycle) -- wavetable
 // generation reads it directly: harmonic*index arguments land exactly on
 // table entries, so additive synthesis needs no interpolation at all.
@@ -55,5 +65,7 @@ const i32* sine_table_4096() noexcept;
 
 // Cutoff-table steps per octave of frequency, Q16.16 (key-tracking scale).
 i32 cutoff_steps_per_octave_q16() noexcept;
+// Inverse of cutoff_index_from_hz: table index (Q16, 0..256) -> Hz (Q16).
+i32 cutoff_hz_from_index(i32 index_q16) noexcept;
 
 }  // namespace msynth

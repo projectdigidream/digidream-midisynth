@@ -8,8 +8,9 @@
 namespace msynth {
 
 enum class ModSource : u8 {
-    LFO1, LFO2, AmpEnv, FilterEnv, PitchEnv, WtPosEnv,
-    Velocity, KeyTrack, ModWheel, ChannelAftertouch, COUNT
+    LFO1, LFO2, LFO3, LFO4,  // contiguous: voice indexes LFO1 + i
+    AmpEnv, FilterEnv, PitchEnv, WtPosEnv,
+    Velocity, KeyTrack, ModWheel, ChannelAftertouch, PolyAftertouch, COUNT
 };
 
 enum class ModDest : u8 {
@@ -19,6 +20,9 @@ enum class ModDest : u8 {
     Amplitude,     // gain multiplier (1 + sum), clamped [0, 1]
     WtPosition,    // amount 1.0 = full frame range
     Pan,           // amount 1.0 = full right
+    FilterDrive,   // amount 1.0 = +7x drive (the full 1..8 range)
+    PostDrive,    // same scale, on the POST-filter stage (the "power amp")
+    RingAmount,   // ring depth, or the FM index when the layer is in fm mode
     COUNT
 };
 

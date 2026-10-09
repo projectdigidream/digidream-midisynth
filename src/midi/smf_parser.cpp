@@ -163,7 +163,8 @@ void parse_track(const u8* data, size_t len, u16 track_idx, bool smpte, ParsedSo
                 }
                 break;
             case 0xA0:
-                break;  // poly aftertouch: recognized, unsupported downstream
+                push(status, d1, d2);  // per-note aftertouch (mod source)
+                break;
             default:
                 push(status, d1, d2);
                 break;

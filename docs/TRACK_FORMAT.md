@@ -1,6 +1,6 @@
 # .mstk — the baked track format
 
-A **track** is midisynth's self-contained music deliverable: MIDI + patches +
+A **track** is DigidreamSynth's self-contained music deliverable: MIDI + patches +
 drum kit + effects config compiled into one binary file — the music analogue
 of the engine's `mapc`-baked maps. The game ships tracks, not loose JSON and
 SMF files, and everything that can fail at load already failed at bake.
@@ -25,6 +25,12 @@ synth.loadTrackFromBuffer()                              # WASM
 The authoring tool bakes too: load a `.mid`, tweak patches, press
 **Bake .mstk** — the download embeds your current bank/kit edits and the FX
 slider state. The tool also *plays* `.mstk` files directly.
+
+The ".mstk wherever .mid" rule includes the generic entry points: `msynth_load_song`,
+`msynth_crossfade_to`, `loadSongFromBuffer` and `crossfadeFromBuffer` all
+dispatch on the track magic. And a crossfade whose source fails to load
+(garbage, corrupt track, wrong version) **aborts without starting the fade**
+— the current song keeps playing; you get an error report, never silence.
 
 ## What baking does
 
@@ -85,6 +91,31 @@ The cutter tool: load a `.mstk`, drag a bar-snapped region on the timeline
 loops, **⇄ Crossfade into region** to hear the transition at a chosen fade
 length, then add slices to a list and export each as its own `.mstk`.
 
+## Mastering is part of the deliverable
+
+A track can carry its **mastering chain** (3-band EQ → compressor → stereo
+width → output gain → lookahead limiter; `docs/PATCH_FORMAT.md` §5.1). Pass
+`--master m.json` to `midisynth_bake` (or a `"master"` object inside the
+`--fx` config; `--master` wins), and every loader — CLIs, C API, WASM,
+`cut_track` slices — pushes it to the engine with the rest of the FX, so the
+**render seal covers the mastered output**. The engine's mastering stage is
+deterministic fixed point like everything else, and bypassed unless a track
+(or the DAW) turns it on: bakes without mastering are byte-identical to
+pre-mastering bakes. When enabled, the limiter's lookahead adds
+`lookaheadBlocks × 64` samples of latency (2.7 ms by default) — the sequencer
+clock is unaffected, only the audio arrives that much later.
+
+```
+midisynth_bake song.mid -o track.mstk --bank b.json --drums k.json \
+    --master content/fx/master_default.json --verify-seconds 30
+midisynth_bake --to-mid track.mstk song_back.mid   # SONG section -> Standard MIDI File
+```
+
+`--to-mid` writes the baked song back out as a format-1 SMF (tempo map,
+loop markers, time signatures, every channel event with baked-position
+fidelity); bank/kit/fx are not representable in SMF and are dropped. This is
+how the DAW imports `.mstk` pieces for editing.
+
 ## Binary layout (version 1)
 
 All integers little-endian, fixed width. No alignment padding.
@@ -105,7 +136,8 @@ payload: concatenated section bodies
 | `SONG` | `u32 division`, `u32 end_tick`, `u64 end_sample`, `u8 loop_flags`, `u32 loop_start_tick`, `u32 loop_end_tick`, tempo segments (`u32 start_tick, u64 start_sample, u32 us_per_quarter, u64 samples_per_tick_fp`), events (`u64 sample, u32 tick, u8 status, u8 d1, u8 d2, u16 track, u32 seq`) |
 | `BANK` | length-prefixed UTF-8: tree-shaken patch-bank JSON |
 | `KIT ` | length-prefixed UTF-8: tree-shaken drum-kit JSON |
-| `FX  ` | 7 × `i32` Q16.16: reverb room/damping/width/wet, chorus rate/depth/wet |
+| `FX  ` | 7 × `i32` Q16.16: reverb room/damping/width/wet, chorus rate/depth/wet — followed by an **optional appended tail** newer bakers write and older readers ignore: delay time/feedback/wet/pingPong (4 × `i32`), 12 × `i32` microtuning cents, then 16 × 4 × `i32` per-channel EQ (low dB, mid dB, mid Hz, high dB per MIDI channel) |
+| `MSTR` | *optional* — mastering chain: `u32 count`, then `count` × `i32` in `MasterParamId` order (`src/synth/master_chain.h`: enabled, EQ low hz/db, mid hz/db/q, high hz/db, comp threshold/ratio/attack/release/makeup/knee, limiter ceiling/lookahead/release, width, gain). Written only when mastering is enabled; **absent ⇒ bypass**. Readers ignore ids they don't know (append-only), so newer bakes load on older engines minus the new knobs |
 | `META` | name (length-prefixed), `u32 duration_ms`, `u8 programs_used[16]` bitmap, `u8 drum_notes_used[16]` bitmap, `u8 has_render_hash`, `u8 render_hash[32]`, `u32 render_seconds`, `u8 content_hash[32]` (sha256 of bank+kit JSON — equal hashes ⇒ crossfade-compatible) |
 
 Two consistency properties are enforced at load:
