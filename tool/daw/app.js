@@ -571,5 +571,5 @@ async function boot(client, setStage = () => {}) {
   arrange.refreshTracks();
   log('DAW ready — draw notes in Track, record with ● Rec, bake in File › Bake .mstk', 'ok');
   // Exposed for the smoke test.
-  window.__daw = { store, client, ctx, playback, ui, pieces, recorder, cues, cutter, master, editor, fitPanel };
+  window.__daw = { store, client, ctx, playback, ui, pieces, recorder, cues, cutter, master, editor, fitPanel, roll };
 }

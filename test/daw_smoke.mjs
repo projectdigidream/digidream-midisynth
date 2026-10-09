@@ -29,7 +29,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await puppeteer.launch({
   executablePath: CHROME, headless: 'new',
-  args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'],
+  // Tall enough that the whole piano roll, scroll bar and lane included, is
+  // inside the viewport -- page.mouse works in viewport coordinates, so
+  // anything below the fold is silently clicked somewhere else. Touch events
+  // are enabled at launch because turning them on later reloads the page,
+  // and the unload guard blocks that.
+  defaultViewport: { width: 1400, height: 1100 },
+  args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio', '--touch-events=enabled'],
 });
 const page = await browser.newPage();
 const pageErrors = [];
@@ -91,6 +97,101 @@ await page.keyboard.down('Meta'); await page.keyboard.press('z'); await page.key
 await sleep(300);
 const notesUndo = await page.evaluate(() => window.__daw.store.p.tracks[0].notes.length);
 check(notesUndo === notesBefore, `undo removes it (${notesUndo})`);
+
+// Scrolling the roll. Direction is the whole point here: the notes must move
+// WITH the finger on both axes, and the vertical half used to do the
+// opposite, which no state-only pass/fail would have caught.
+const view = () => page.evaluate(() => window.__daw.roll.view());
+const rollEl = async () => {
+  await page.$eval('#roll', (el) => el.scrollIntoView({ block: 'center' }));
+  await sleep(60);
+  return (await page.$('#roll')).boundingBox();
+};
+
+// Stop first: while the transport runs the view follows the playhead, which
+// quietly undoes every scroll under test.
+await page.evaluate(() => window.__daw.playback.stop());
+await sleep(200);
+await page.evaluate(() => {
+  window.__daw.store.mutate('scroll fixture', (p) => {
+    p.tracks[0].notes = [];
+    // Long enough that the song does not fit the view -- with nothing to
+    // scroll to, every scroll test passes or fails for the wrong reason.
+    for (let i = 0; i < 96; i++)
+      p.tracks[0].notes.push({ tick: 480 + i * 480, dur: 300, note: 60 + (i % 5), vel: 100 });
+  });
+});
+await sleep(400);
+
+// Sliding along the key column scrolls pitch; a tap there still auditions.
+let v0 = await view();
+let b = await rollEl();
+await page.mouse.move(b.x + 20, b.y + 150);
+await page.mouse.down();
+await page.mouse.move(b.x + 20, b.y + 250, { steps: 10 });
+await page.mouse.up();
+await sleep(200);
+let v1 = await view();
+const rows = Math.round(100 / v0.noteH);
+check(v1.topNote === v0.topNote + rows,
+      `dragging the keys down scrolls pitch down ${rows} rows (${v0.topNote} -> ${v1.topNote})`);
+
+// The scroll bar between the grid and the lane.
+b = await rollEl();
+v0 = await view();
+const sbY = b.y + v0.sbCss.y + v0.sbCss.h / 2;   // the middle of the strip, wherever it is
+await page.mouse.move(b.x + 120, sbY);
+await page.mouse.down();
+await page.mouse.move(b.x + 340, sbY, { steps: 10 });
+await page.mouse.up();
+await sleep(200);
+v1 = await view();
+check(v1.scrollTick > v0.scrollTick, `the scroll bar moves along the song (${Math.round(v0.scrollTick)} -> ${Math.round(v1.scrollTick)} ticks)`);
+await page.mouse.move(b.x + 340, sbY);
+await page.mouse.down();
+await page.mouse.move(b.x + 60, sbY, { steps: 10 });
+await page.mouse.up();
+await sleep(200);
+check((await view()).scrollTick < v1.scrollTick, 'and back');
+
+// Two fingers: pan both ways, and a pan that holds its spread must not zoom.
+const twoFinger = async (dx, dy, spread = 0) => {
+  const r = await rollEl();
+  const cdp = await page.createCDPSession();
+  const at = (f) => [
+    { x: r.x + r.width / 2 - 60 - spread * f + dx * f, y: r.y + r.height / 2 - 40 + dy * f, id: 1 },
+    { x: r.x + r.width / 2 + 60 + spread * f + dx * f, y: r.y + r.height / 2 + 40 + dy * f, id: 2 },
+  ];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+  for (let i = 1; i <= 8; i++)
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(i / 8) });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+  await sleep(200);
+};
+v0 = await view();
+await twoFinger(0, 120);
+v1 = await view();
+check(v1.topNote > v0.topNote, `two fingers down brings the notes down with them (${v0.topNote} -> ${v1.topNote})`);
+await twoFinger(0, -120);
+check((await view()).topNote < v1.topNote, 'two fingers up take them back');
+
+v0 = await view();
+await twoFinger(-180, 0);
+v1 = await view();
+check(v1.scrollTick > v0.scrollTick, `two fingers left carry the song along (${Math.round(v0.scrollTick)} -> ${Math.round(v1.scrollTick)} ticks)`);
+await twoFinger(180, 0);
+check((await view()).scrollTick < v1.scrollTick, 'two fingers right bring it back');
+
+// The deadzone: a pan holding its spread leaves both zooms exactly alone.
+v0 = await view();
+await twoFinger(0, 100);
+v1 = await view();
+check(v1.noteH === v0.noteH && v1.pxPerBeat === v0.pxPerBeat,
+      `panning does not zoom (noteH ${v0.noteH} -> ${v1.noteH}, pxPerBeat ${v0.pxPerBeat} -> ${v1.pxPerBeat})`);
+// ... but a real pinch still does, on the axis it is spread along.
+await twoFinger(0, 0, 120);
+check((await view()).pxPerBeat > v1.pxPerBeat * 1.2, 'a pinch still zooms the time axis');
 
 // Recording: synthetic MIDI stream onto the armed track.
 await page.evaluate(async () => {

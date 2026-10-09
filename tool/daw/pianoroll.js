@@ -10,6 +10,10 @@ import { scoped, canvas2d, clamp } from '../lib/ui.js';
 import { barStarts, barTicksAt, beatTicksAt, gridTicks, projectEndTick, sortEvents } from './project.js';
 
 const KEY_W = 52, RULER_H = 20, LANE_H = 70;
+// A scroll bar a mouse can hit is not one a fingertip can. Keyed to how
+// coarse the pointer is rather than to screen size, because that is what
+// decides how big the target has to be -- a touchscreen laptop included.
+const SB_H = matchMedia('(pointer: coarse)').matches ? 18 : 11;
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
 export function initPianoRoll(root, ctx) {
@@ -22,6 +26,7 @@ export function initPianoRoll(root, ctx) {
   let scrollTick = 0;
   let topNote = 84;           // note at the top edge
   let noteH = 12;
+  let pitchFitted = false;
   let selection = new Set();  // indices into track.notes
   let drag = null;
   let raf = 0;
@@ -69,9 +74,27 @@ export function initPianoRoll(root, ctx) {
 
   // ---------------- geometry ----------------
   const geo = (w, h, dpr) => ({
-    keyW: KEY_W * dpr, rulerH: RULER_H * dpr, laneH: LANE_H * dpr,
-    gridTop: RULER_H * dpr, gridBottom: h - LANE_H * dpr, nh: noteH * dpr,
+    keyW: KEY_W * dpr, rulerH: RULER_H * dpr, laneH: LANE_H * dpr, sbH: SB_H * dpr,
+    gridTop: RULER_H * dpr, laneTop: h - LANE_H * dpr,
+    gridBottom: h - (LANE_H + SB_H) * dpr, nh: noteH * dpr,
   });
+
+  // Horizontal scroll bar, in the strip between the grid and the lane. The
+  // span runs to the end of the project plus a bar, or to the right edge of
+  // the view if you have scrolled past that, so the thumb never pins itself.
+  const hbar = (w, h, dpr) => {
+    const G = geo(w, h, dpr);
+    const visible = Math.max(1, ((w - G.keyW) / (pxPerBeat * dpr)) * store.p.ppq);
+    const total = Math.max(projectEndTick(store.p) + store.p.ppq * 4, scrollTick + visible);
+    const trackW = w - G.keyW;
+    const thumbW = Math.max(30 * dpr, Math.min(trackW, (visible / total) * trackW));
+    const span = Math.max(1, total - visible);
+    return { x: G.keyW, y: G.gridBottom, h: G.sbH, trackW, thumbW, span,
+             thumbX: G.keyW + (scrollTick / span) * (trackW - thumbW) };
+  };
+  const scrollTo = (x, grab, sb) =>
+    { scrollTick = Math.max(0, Math.min(sb.span,
+        ((x - grab - sb.x) / Math.max(1, sb.trackW - sb.thumbW)) * sb.span)); };
   const xOfTick = (tick, dpr) => KEY_W * dpr + ((tick - scrollTick) / store.p.ppq) * pxPerBeat * dpr;
   const tickOfX = (x, dpr) => scrollTick + ((x - KEY_W * dpr) / (pxPerBeat * dpr)) * store.p.ppq;
   const yOfNote = (note, dpr) => RULER_H * dpr + (topNote - note) * noteH * dpr;
@@ -96,6 +119,14 @@ export function initPianoRoll(root, ctx) {
     const { g, w, h, dpr } = canvas2d(canvas);
     const p = store.p;
     const t = track();
+    if (!pitchFitted && h > 40 * dpr) {
+      // At the desktop note height a phone opens on eight rows, which is most
+      // of why this view felt like nothing but scrolling. Fit about twenty
+      // rows once, at the size the canvas actually came up, then leave it to
+      // the user's own zoom.
+      noteH = clamp((h - (RULER_H + LANE_H + SB_H) * dpr) / dpr / 20, 7, 12);
+      pitchFitted = true;
+    }
     const G = geo(w, h, dpr);
     g.fillStyle = '#101318';
     g.fillRect(0, 0, w, h);
@@ -202,7 +233,7 @@ export function initPianoRoll(root, ctx) {
     }
 
     // Lane.
-    const laneTop = G.gridBottom;
+    const laneTop = G.laneTop;
     g.fillStyle = '#0c0e12';
     g.fillRect(0, laneTop, w, G.laneH);
     g.strokeStyle = 'rgba(255,255,255,0.2)';
@@ -250,6 +281,17 @@ export function initPianoRoll(root, ctx) {
       if (!first) { g.lineTo(w, yc(last)); g.stroke(); }
     }
 
+    // Scroll bar: the one-finger way to move along the song, and the only
+    // on-screen sign of how long the song is and where in it you are.
+    const sb = hbar(w, h, dpr);
+    g.fillStyle = '#0a0c10';
+    g.fillRect(0, sb.y, w, sb.h);
+    g.strokeStyle = 'rgba(255,255,255,0.12)';
+    g.lineWidth = dpr;
+    g.beginPath(); g.moveTo(0, sb.y); g.lineTo(w, sb.y); g.stroke();
+    g.fillStyle = drag?.kind === 'hscroll' ? '#7bc67b' : 'rgba(255,255,255,0.3)';
+    g.fillRect(sb.thumbX, sb.y + 2 * dpr, sb.thumbW, sb.h - 4 * dpr);
+
     // Playhead.
     const px = xOfTick(pos, dpr);
     if (px >= G.keyW) {
@@ -283,8 +325,18 @@ export function initPianoRoll(root, ctx) {
     const [a, b] = [...touches.values()];
     return {
       cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2,
-      spread: Math.hypot(a.x - b.x, a.y - b.y),
+      sx: Math.abs(a.x - b.x), sy: Math.abs(a.y - b.y),
     };
+  };
+  // Two fingers never hold an exactly constant distance, so a bare spread
+  // ratio zooms a little on every pan -- and because the pan is measured in
+  // the zoomed units, the grid slides out from under the fingers as it goes.
+  // Ignore the first fifth of the change, and ignore an axis the fingers are
+  // not meaningfully spread along.
+  const zoomFactor = (now, start) => {
+    if (start < 30 || now < 30) return 1;
+    const r = now / start, dz = 1.2;
+    return r > dz ? r / dz : r < 1 / dz ? r * dz : 1;
   };
 
   canvas.addEventListener('pointerdown', (e) => {
@@ -296,9 +348,14 @@ export function initPianoRoll(root, ctx) {
       touches.set(e.pointerId, { x, y });
       if (touches.size === 2) {
         // Second finger down: abandon whatever the first one started and pan
-        // instead. Nothing is committed until pointerup, so nothing is lost.
+        // instead. Nothing is committed until pointerup, so no edit is lost --
+        // but a note the first finger set sounding has no pointerup coming,
+        // and used to hang until something else happened to stop it.
+        if (drag?.kind === 'new') client.noteOff(channel, drag.note);
+        if (heldKey !== null) { client.noteOff(channel, heldKey); heldKey = null; }
+        clearTimeout(holdTimer); holdTimer = null;
         drag = null;
-        gesture = { ...gestureState(), scrollTick, topNote, pxPerBeat };
+        gesture = { ...gestureState(), scrollTick, topNote, pxPerBeat, noteH };
         return;
       }
       if (touches.size > 2) return;
@@ -306,10 +363,18 @@ export function initPianoRoll(root, ctx) {
     canvas.setPointerCapture(e.pointerId);
     const t = track();
     if (!t) return;
-    if (x < G.keyW && y >= G.gridTop && y < G.gridBottom) {   // keyboard audition
+    if (x < G.keyW && y >= G.gridTop && y < G.gridBottom) {   // keys: tap auditions, drag scrolls
       heldKey = noteOfY(y, dpr);
       client.noteOn(channel, heldKey, defaultVel());
-      drag = { kind: 'key' };
+      drag = { kind: 'key', y0: y, top0: topNote };
+      return;
+    }
+    if (y >= G.gridBottom && y < G.laneTop) {   // scroll bar
+      const sb = hbar(canvas.width, canvas.height, dpr);
+      const onThumb = x >= sb.thumbX && x <= sb.thumbX + sb.thumbW;
+      const grab = onThumb ? x - sb.thumbX : sb.thumbW / 2;   // tapping the track centres the thumb
+      drag = { kind: 'hscroll', grab, sb };
+      scrollTo(x, grab, sb);
       return;
     }
     if (y < G.rulerH) {  // seek
@@ -317,7 +382,7 @@ export function initPianoRoll(root, ctx) {
       drag = { kind: 'seek' };
       return;
     }
-    if (y >= G.gridBottom) {  // lane edit
+    if (y >= G.laneTop) {  // lane edit
       if (tool === 'erase' || e.button === 2) {   // remove points, don't paint
         drag = { kind: 'lane-erase' };
         laneErase(x, dpr);
@@ -381,14 +446,18 @@ export function initPianoRoll(root, ctx) {
       touches.set(e.pointerId, { x, y });
       if (gesture && touches.size === 2) {
         const now = gestureState();
-        // Horizontal drag scrolls time, vertical drag scrolls pitch, and the
-        // spread between the fingers zooms -- all from the gesture's start,
-        // so it never accumulates drift.
-        pxPerBeat = clamp(gesture.pxPerBeat * (now.spread / Math.max(1, gesture.spread)), 4, 400);
+        // The grid follows the fingers on BOTH axes: drag down and the notes
+        // come down with you. The vertical half used to be the other way
+        // round -- the view moved down, so the notes went up -- which made
+        // the one gesture fight itself, since time already followed the hand.
+        // Each axis zooms from its own spread, so a pinch can open the pitch
+        // range out without stretching the bars.
+        pxPerBeat = clamp(gesture.pxPerBeat * zoomFactor(now.sx, gesture.sx), 4, 400);
+        noteH = clamp(gesture.noteH * zoomFactor(now.sy, gesture.sy), 5, 36);
         scrollTick = Math.max(0, gesture.scrollTick -
           ((now.cx - gesture.cx) / (pxPerBeat * dpr)) * store.p.ppq);
         const G = geo(canvas.width, canvas.height, dpr);
-        topNote = clamp(Math.round(gesture.topNote - (now.cy - gesture.cy) / G.nh), 12, 127);
+        topNote = clamp(Math.round(gesture.topNote + (now.cy - gesture.cy) / G.nh), 12, 127);
         return;
       }
     }
@@ -398,10 +467,22 @@ export function initPianoRoll(root, ctx) {
     const tick = Math.max(0, tickOfX(x, dpr));
     switch (drag.kind) {
       case 'key': {
+        // Sliding along the keys is the one-finger way to move through the
+        // pitch range; a short slide still plays the keys it crosses.
+        if (drag.panning || Math.abs(y - drag.y0) > 7 * dpr) {
+          if (!drag.panning) {
+            drag.panning = true;
+            if (heldKey !== null) client.noteOff(channel, heldKey);
+            heldKey = null;
+          }
+          topNote = clamp(Math.round(drag.top0 + (y - drag.y0) / G.nh), 12, 127);
+          break;
+        }
         const n = clamp(noteOfY(y, dpr), 0, 127);
         if (n !== heldKey) { client.noteOff(channel, heldKey); heldKey = n; client.noteOn(channel, n, defaultVel()); }
         break;
       }
+      case 'hscroll': scrollTo(x, drag.grab, drag.sb); break;
       case 'seek': ctx.playback.seekTick(snapT(tick)); break;
       case 'lane': laneEdit(x, y, dpr, G); break;
       case 'lane-erase': laneErase(x, dpr); break;
@@ -509,7 +590,7 @@ export function initPianoRoll(root, ctx) {
   function laneRamp(a, b, dpr, G) {
     const mode = laneMode();
     if (mode === 'vel') return;
-    const valAt = (y) => clamp(1 - (y - G.gridBottom - 3 * dpr) / (G.laneH - 8 * dpr), 0, 1);
+    const valAt = (y) => clamp(1 - (y - G.laneTop - 3 * dpr) / (G.laneH - 8 * dpr), 0, 1);
     let t0 = snapT(Math.max(0, tickOfX(a.x, dpr))), t1 = snapT(Math.max(0, tickOfX(b.x, dpr)));
     let f0 = valAt(a.y), f1 = valAt(b.y);
     if (t1 < t0) { [t0, t1] = [t1, t0]; [f0, f1] = [f1, f0]; }
@@ -537,7 +618,7 @@ export function initPianoRoll(root, ctx) {
   function laneEdit(x, y, dpr, G) {
     const mode = laneMode();
     const tick = Math.max(0, tickOfX(x, dpr));
-    const frac = clamp(1 - (y - G.gridBottom - 3 * dpr) / (G.laneH - 8 * dpr), 0, 1);
+    const frac = clamp(1 - (y - G.laneTop - 3 * dpr) / (G.laneH - 8 * dpr), 0, 1);
     if (mode === 'vel') {
       const vel = clamp(Math.round(frac * 127), 1, 127);
       const t = track();
@@ -601,6 +682,14 @@ export function initPianoRoll(root, ctx) {
     setTrack,
     refreshTrackList,
     get channel() { return channel; },
+    // What the view is currently showing. Scrolling is otherwise only
+    // visible as pixels, and the smoke test needs to assert a direction.
+    view: () => {
+      const dpr = window.devicePixelRatio || 1;
+      const G = geo(canvas.width, canvas.height, dpr);
+      return { scrollTick, topNote, noteH, pxPerBeat,
+               sbCss: { y: G.gridBottom / dpr, h: G.sbH / dpr } };
+    },
     activate() { active = true; document.addEventListener('keydown', onKey); if (!raf) draw(); },
     deactivate() { active = false; document.removeEventListener('keydown', onKey); cancelAnimationFrame(raf); raf = 0; },
   };
