@@ -1,5 +1,6 @@
 {
   "name": "digidreamsynth-mobile",
+  "license": "MIT",
   "version": "0.2.0",
   "private": true,
   "description": "Android shell for the DigidreamSynth DAW (Capacitor).",

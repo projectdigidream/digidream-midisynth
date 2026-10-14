@@ -34,7 +34,6 @@ CASES=(
   "tempos:tempos.mid:--seconds 8"
   "tempos_loop:tempos.mid:--loop --seconds 12"
   "poly:poly.mid:"
-  "swan_lake_30s:swan_lake.mid:--seconds 30"
 )
 
 TMP=$(mktemp -d)

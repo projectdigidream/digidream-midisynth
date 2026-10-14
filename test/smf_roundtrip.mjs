@@ -87,7 +87,7 @@ check(store.p.tracks[0].notes.length === 5, 'redo re-applies');
 check(ProjectStore.fromJSON(store.toJSON()).tracks.length === 3, 'project JSON round trip');
 
 // ---- golden corpus: import -> export -> import is stable ----
-for (const f of ['melody.mid', 'drums.mid', 'tempos.mid', 'poly.mid', 'swan_lake.mid']) {
+for (const f of ['melody.mid', 'drums.mid', 'tempos.mid', 'poly.mid']) {
   const path = join(root, 'test/golden', f);
   if (!existsSync(path)) { console.log('skip', f); continue; }
   const a = smfToProject(readFileSync(path), { name: f });

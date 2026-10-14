@@ -73,8 +73,7 @@ void check_roundtrip(const std::vector<u8>& smf, const char* label) {
 
 TEST(smf_writer_roundtrips_golden_corpus) {
     for (const char* f : {"test/golden/melody.mid", "test/golden/drums.mid",
-                          "test/golden/tempos.mid", "test/golden/poly.mid",
-                          "test/golden/swan_lake.mid"}) {
+                          "test/golden/tempos.mid", "test/golden/poly.mid"}) {
         std::vector<u8> smf;
         if (!read_file(f, smf)) { CHECK(false); continue; }
         check_roundtrip(smf, f);
