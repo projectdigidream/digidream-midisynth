@@ -46,6 +46,11 @@ if [[ ! -d android ]]; then
       --iconBackgroundColor '#14161a' --splashBackgroundColor '#14161a'
 fi
 npx cap sync android
+# The version from VERSION (android/ is generated, so it is set on every build):
+# versionName as written, versionCode 0.2.0 -> 200, 1.2.3 -> 10203.
+VER="$(cat ../VERSION)"
+CODE="$(echo "$VER" | awk -F. '{print $1*10000 + $2*100 + $3}')"
+sed -i.bak -e "s/versionCode [0-9]*/versionCode $CODE/" -e "s/versionName \"[^\"]*\"/versionName \"$VER\"/" android/app/build.gradle && rm -f android/app/build.gradle.bak
 
 : "${ANDROID_HOME:=$HOME/Library/Android/sdk}"
 export ANDROID_HOME

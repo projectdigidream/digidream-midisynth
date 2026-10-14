@@ -1,7 +1,7 @@
 {
   "name": "digidreamsynth",
   "productName": "DigidreamSynth",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "Deterministic fixed-point MIDI music studio: arrange, record, synthesise, master and bake .mstk game tracks.",
   "license": "MIT",
   "main": "main.js",
