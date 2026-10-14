@@ -5,6 +5,7 @@
 #   ./scripts/package_electron.sh               installers for this platform
 #   ./scripts/package_electron.sh --dir         unpacked app only (fast)
 #   ./scripts/package_electron.sh --stage-only  just refresh electron/payload/
+#   ./scripts/package_electron.sh --all          macOS (arm64 + x64), Windows x64 and Linux x64
 #   ./scripts/package_electron.sh --linux       cross-build Linux targets
 #
 # The desktop app is the web bundle plus a shell: this stages the exact same
@@ -40,6 +41,7 @@ case "$MODE" in
   --linux) npx electron-builder --linux ;;
   --win)   npx electron-builder --win ;;
   --mac)   npx electron-builder --mac ;;
+  --all)   npx electron-builder --mac --win --linux ;;
   *)       npx electron-builder ;;
 esac
 echo "artifacts in electron/dist/"
