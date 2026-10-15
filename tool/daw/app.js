@@ -438,6 +438,10 @@ async function boot(client, setStage = () => {}) {
   store.addEventListener('change', async (e) => {
     const d = e.detail;
     const p = store.p;
+    // The host hears of an edit at once (its edited dot, the studio's
+    // "changed" and drafts): not only from the audio status loop, which never
+    // ticks before audio has started (no click yet, a muted or headless page).
+    syncDocument();
     // Header widgets.
     $('proj-name').value = p.name;
     $('bpm').value = p.tempoMap[0].bpm;
