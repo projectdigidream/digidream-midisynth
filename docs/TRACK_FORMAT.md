@@ -62,7 +62,7 @@ tree-shaken out of the full bank, with a 20-second render seal.
 ## Loop overrides
 
 `--loop-start-tick/--loop-end-tick` bake explicit loop points into the file
-(the plan's highest-priority loop source), overriding whatever the SMF's
+(the highest-priority loop source), overriding whatever the SMF's
 markers/CC111 declared — so a game-ready looping track needs no runtime
 configuration at all.
 
