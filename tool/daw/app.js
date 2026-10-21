@@ -61,7 +61,36 @@ async function boot(client, setStage = () => {}) {
   ]);
   const defaultBank = JSON.parse(bankText), defaultKit = JSON.parse(kitText);
 
-  const store = new ProjectStore(newProject());
+  // ---------------- autosave ----------------
+  // One snapshot in localStorage, so a reload or a crash does not cost the
+  // session. The file path is deliberately not restored: ⌘S on a recovered
+  // project asks where to put it rather than overwriting something.
+  // ponytail: one key, so the last window to write wins when the desktop app
+  // has several open; key per window if that ever matters.
+  const AUTOSAVE_KEY = 'dgs.daw.autosave';
+  let autosaveTimer = null;
+  const autosaveNow = () => {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    try { localStorage.setItem(AUTOSAVE_KEY, store.toJSON()); }
+    catch (err) { log('autosave failed: ' + err.message, 'warn'); }
+  };
+  const autosave = () => {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(autosaveNow, 2000);
+  };
+  const autosaveClear = () => {
+    clearTimeout(autosaveTimer);
+    try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* nothing to drop */ }
+  };
+  let restored = null;
+  try {
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if (raw) restored = ProjectStore.fromJSON(raw);
+  } catch { restored = null; }   // private mode, or a snapshot from an older shape
+
+  const store = new ProjectStore(restored || newProject());
+  if (restored) store.dirty = true;   // it differs from whatever is on disk
   const editorStore = { bankDoc: null, kitDoc: null };
   const pieces = new Map();   // cue pieces: name -> {bytes, source, ms}
   let mode = 'project';       // 'project' | 'pieces' (Cut/Cues tabs drive the engine directly)
@@ -465,6 +494,7 @@ async function boot(client, setStage = () => {}) {
     if (currentTab === 'synth') refreshSynthList();
     if (currentTab === 'cues') cues.refresh();
     refreshHistoryUI();
+    autosave();
   });
 
   // ---------------- undo / redo ----------------
@@ -535,6 +565,7 @@ async function boot(client, setStage = () => {}) {
               'The current project has edits that were never saved.', 'Discard')) {
           ctx.loadProject(newProject());
           ctx.setProjectPath(null);
+          autosaveClear();
         }
         break;
       case 'open': await files.openProject(ctx); break;
@@ -641,7 +672,10 @@ async function boot(client, setStage = () => {}) {
     }
     else if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && currentTab !== 'synth') recorder.toggle();
   });
-  window.addEventListener('beforeunload', (e) => { if (store.dirty) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', (e) => {
+    if (autosaveTimer) autosaveNow();        // the last edits, before the page goes
+    if (store.dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
 
   // ---------------- go ----------------
   setStage('building wavetables…');
@@ -652,8 +686,11 @@ async function boot(client, setStage = () => {}) {
   arrange.start();
   arrange.refreshTracks();
   refreshHistoryUI();          // both start out with nothing to take back
-  log('DAW ready — draw notes in Track, record with ● Rec, bake in File › Bake .mstk', 'ok');
+  log(restored
+    ? `recovered '${store.p.name}' from the last session — File › New project starts over`
+    : 'DAW ready — draw notes in Track, record with ● Rec, bake in File › Bake .mstk', 'ok');
   // Exposed for the smoke test.
   window.__daw = { store, client, ctx, playback, ui, pieces, recorder, cues, cutter, master, editor,
-                   fitPanel, roll, undo: doUndo, redo: doRedo };
+                   fitPanel, roll, undo: doUndo, redo: doRedo,
+                   autosave: { now: autosaveNow, clear: autosaveClear, key: AUTOSAVE_KEY, restored: !!restored } };
 }

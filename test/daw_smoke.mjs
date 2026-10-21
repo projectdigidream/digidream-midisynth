@@ -367,6 +367,42 @@ check(exp.smfLen > 100 && exp.tracks === 2, `.mid export (${exp.smfLen} bytes, $
 check(exp.jsonLen > 1000, `.msproj serializes (${exp.jsonLen} chars)`);
 check(exp.baked > 1000, `.mstk bakes with mastering (${exp.baked} bytes)`);
 
+// Autosave: an edit lands in localStorage, and a reload comes back to it.
+await page.evaluate(() => window.__daw.store.mutate('autosave fixture', (p) => {
+  p.name = 'recovered-me';
+  p.tracks[0].notes.push({ tick: 960, dur: 240, note: 71, vel: 99 });
+}));
+await page.evaluate(() => window.__daw.autosave.now());
+const saved = await page.evaluate(() => {
+  const raw = localStorage.getItem(window.__daw.autosave.key);
+  return raw ? JSON.parse(raw).name : null;
+});
+check(saved === 'recovered-me', `the project is in localStorage (${saved})`);
+
+const wantNotes = await page.evaluate(() => window.__daw.store.p.tracks[0].notes.length);
+// The unload guard would block a reload, so drop the flag the way a save does.
+await page.evaluate(() => { window.__daw.store.dirty = false; });
+await page.reload({ waitUntil: 'networkidle0' });
+await page.click('#start-btn');
+await page.waitForFunction(() => window.__daw && !document.getElementById('overlay'), { timeout: 20000 });
+await sleep(600);
+const back = await page.evaluate(() => ({
+  name: window.__daw.store.p.name,
+  notes: window.__daw.store.p.tracks[0].notes.length,
+  restored: window.__daw.autosave.restored,
+  path: window.__daw.ctx.projectPath,
+}));
+check(back.restored && back.name === 'recovered-me' && back.notes === wantNotes,
+      `reload recovers the session (${back.name}, ${back.notes} notes)`);
+check(!back.path, 'but not the file path, so a save cannot overwrite the wrong file');
+
+// New project drops the snapshot rather than leaving it to come back later.
+await page.evaluate(() => { window.__daw.store.dirty = false; });
+await page.evaluate(() => window.__daw.ctx.runAction('new'));
+await sleep(500);
+const cleared = await page.evaluate(() => localStorage.getItem(window.__daw.autosave.key));
+check(cleared === null, 'New project clears the snapshot');
+
 const realErrors = pageErrors.filter((e) => !e.includes('favicon') && !e.startsWith('console: Failed to load resource'));
 check(realErrors.length === 0, 'no page errors' + (realErrors.length ? ': ' + realErrors.join(' | ') : ''));
 
