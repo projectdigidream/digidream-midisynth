@@ -96,9 +96,9 @@ opening, cross-boundary notes closed, loop whole) and automatically become
 bake again after loading a saved project.
 
 **Cues** — the piece-combination tester. Pieces = slices, the whole project,
-imported `.mstk` files. Per piece: **▶ now**, **⏭ at loop end** (the change is
+imported `.mstk` files. Per piece: **▶ now**, **⇥ at loop end** (the change is
 queued and executes exactly when the current piece finishes its loop — the
-"Now playing" card counts down `msToBoundary`), **⏭ next bar**, **⇄ fade**
+"Now playing" card counts down `msToBoundary`), **⇥ next bar**, **⇄ fade**
 (crossfade). *Cancel queued* aborts a pending change. Chain rules — *then →
 B after N loops (at loop end / next bar)* — are executed by the tab on the
 engine's piece-switch notification and loop wraps, exactly the way a game

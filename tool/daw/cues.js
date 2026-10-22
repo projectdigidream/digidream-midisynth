@@ -127,7 +127,7 @@ export function initCues(root, ctx) {
       if (isNow) {
         const dur = s.durationMs || infos.get(name)?.durationMs || 1;
         bar.style.width = Math.min(100, (s.timeMs / dur) * 100) + '%';
-        cnt.textContent = s.queued ? `⏱ ${(s.msToBoundary / 1000).toFixed(1)}s` : `loop ${wraps + 1} · ${fmt(s.timeMs)} / ${fmt(dur)}`;
+        cnt.textContent = s.queued ? `in ${(s.msToBoundary / 1000).toFixed(1)}s` : `loop ${wraps + 1} · ${fmt(s.timeMs)} / ${fmt(dur)}`;
         badge.textContent = s.playing ? 'playing' : 'paused';
         badge.className = 'badge on';
       } else if (isPending) {
@@ -172,8 +172,8 @@ export function initCues(root, ctx) {
         <div class="cnt">&nbsp;</div>
         <div class="row">
           <button class="small" data-a="now" title="load and play immediately">▶ now</button>
-          <button class="small primary" data-a="loopEnd" title="switch when the current piece finishes its loop">⏭ at loop end</button>
-          <button class="small" data-a="nextBar" title="switch at the next bar line">⏭ next bar</button>
+          <button class="small primary" data-a="loopEnd" title="switch when the current piece finishes its loop">⇥ at loop end</button>
+          <button class="small" data-a="nextBar" title="switch at the next bar line">⇥ next bar</button>
           <button class="small" data-a="crossfade" title="crossfade now">⇄ fade</button>
         </div>
         <div class="row">

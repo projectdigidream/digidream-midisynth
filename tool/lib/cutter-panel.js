@@ -29,7 +29,7 @@ export const CUTTER_HTML = `
     <span style="flex:1"></span>
     <button id="btn-preview" class="primary" disabled>▶ Loop region</button>
     <button id="btn-play-all" disabled>▶ Whole track</button>
-    <button id="btn-stop">⏹</button>
+    <button id="btn-stop">■</button>
   </div>
   <div class="row">
     <label>crossfade ms</label>
